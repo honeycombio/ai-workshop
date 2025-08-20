@@ -95,7 +95,7 @@ if ! pgrep -f "chroma run" > /dev/null; then
     echo "   Logs: logs/chroma.log"
     
     # Wait a moment for ChromaDB to start
-    sleep 3
+    sleep 10
 else
     echo "✅ ChromaDB already running"
 fi

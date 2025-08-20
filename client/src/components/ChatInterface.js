@@ -274,7 +274,7 @@ const ChatInterface = () => {
     "How do I set up OpenTelemetry auto-instrumentation for a Node.js Express app?",
     "What's the difference between manual and automatic instrumentation?",
     "How can I create custom spans in my Node.js application?",
-    "How do I configure OpenTelemetry to export traces to Jaeger?",
+    "How do I configure OpenTelemetry to export traces to Honeycomb?",
     "What are the best practices for OpenTelemetry sampling?"
   ];
 
