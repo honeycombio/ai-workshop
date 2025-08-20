@@ -52,66 +52,73 @@ An intelligent chatbot application designed to help developers with OpenTelemetr
    cd hny-ai-workshop
    ```
 
-2. **Install dependencies**
+2. **Run quick start script**
    ```bash
-   # install concurrently
-   npm install --save-dev concurrently
-
-   # Install server dependencies
-   npm install
-   
-   # Install client dependencies
-   cd client && npm install && cd ..
-   
-   # Or use the convenience script
-   npm run install-all
-   ```
-
-3. **Configure environment variables**
-   ```bash
-   cp env.example .env
-   ```
-   
-   Edit `.env` with your configuration:
-   ```env
-   # Choose your default LLM provider
-   DEFAULT_LLM_PROVIDER=openai
-   
-   # Add your API keys
-   OPENAI_API_KEY=your_openai_api_key_here
-   ANTHROPIC_API_KEY=your_anthropic_api_key_here
-   
-   # AWS Bedrock (optional)
-   AWS_ACCESS_KEY_ID=your_aws_access_key
-   AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-   AWS_REGION=us-east-1
-   ```
-
-4. **Set up ChromaDB (Vector Database)**
-   
-   Install and start ChromaDB:
-   ```bash
-   pip install chromadb
-   chroma run --host localhost --port 8000
-   ```
-
-5. **Ingest OpenTelemetry documentation**
-   ```bash
-   npm run setup-data
-   ```
-
-6. **Start the application**
-   ```bash
-   # Development mode (starts both server and client)
-   npm run dev
-   
-   # Or start server only
-   npm start
-
-   # Or start everything (client, server, and chromaDB)
-   npm run start:all
-   or
    scripts/quick-start.sh
+   ```
+   The quick start script is a one-for-all script that checks and installs all the required libraries and starts up the whole thing.
+   Here are the layout of the individual steps that you can perform individually:
+
+   1. **Install dependencies**
+      ```bash
+      # install concurrently
+      npm install --save-dev concurrently
+
+      # Install server dependencies
+      npm install
+      
+      # Install client dependencies
+      cd client && npm install && cd ..
+      
+      # Or use the convenience script
+      npm run install-all
+      ```
+
+   2. **Configure environment variables**
+      ```bash
+      cp env.example .env
+      ```
+      
+      Edit `.env` with your configuration:
+      ```env
+      # Choose your default LLM provider
+      DEFAULT_LLM_PROVIDER=openai
+      
+      # Add your API keys
+      OPENAI_API_KEY=your_openai_api_key_here
+      ANTHROPIC_API_KEY=your_anthropic_api_key_here
+      
+      # AWS Bedrock (optional)
+      AWS_ACCESS_KEY_ID=your_aws_access_key
+      AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+      AWS_REGION=us-east-1
+      ```
+
+   3. **Set up ChromaDB (Vector Database)**
+      
+      Install and start ChromaDB:
+      ```bash
+      pip install chromadb
+      chroma run --host localhost --port 8000
+      ```
+
+   4. **Ingest OpenTelemetry documentation**
+      ```bash
+      npm run setup-data
+      ```
+
+   5. **Start the application**
+      ```bash
+      # Development mode (starts both server and client)
+      npm run dev
+      
+      # Or start server only
+      npm start
+
+      # Or start everything (client, server, and chromaDB)
+      npm run start:all
+      or
+      scripts/quick-start.sh
    ```
 
 7. **Access the application**
