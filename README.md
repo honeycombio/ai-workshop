@@ -59,6 +59,8 @@ An intelligent chatbot application designed to help developers with OpenTelemetr
    The quick start script is a one-for-all script that checks and installs all the required libraries and starts up the whole thing.
    Here are the layout of the individual steps that you can perform individually:
 
+   NOTE: When running quick-start.sh for the first time, during the startup of chromaDB, the script may time out and exit. When that happens, no need to worry. You can re-run the script and the script will continue from where it left off.
+
    ***OPTIONAL***
 
    1. **Install dependencies**
