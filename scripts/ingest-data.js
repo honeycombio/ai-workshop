@@ -29,17 +29,23 @@ npm install @opentelemetry/auto-instrumentations-node
 npm install @opentelemetry/exporter-trace-otlp-http
 \`\`\`
 
-2. Create an instrumentation file (instrument.js):
+2. Create an instrumentation file (instrument.mjs) in ./server directory:
 \`\`\`javascript
-const { NodeSDK } = require('@opentelemetry/sdk-node');
-const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
-const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http');
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 
 const sdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter({
     url: 'http://localhost:4318/v1/traces',
+    headers: {
+      'x-honeycomb-team': 'hcaik_xxxxxxxxxxxxxxxxxxxxxxx',  // replace with your honeycomb ingest key
   }),
-  instrumentations: [getNodeAutoInstrumentations()],
+  instrumentations: [getNodeAutoInstrumentations(
+    '@opentelemetry/instrumentation-fs': {
+        enabled: false,
+    },
+  )],
 });
 
 sdk.start();
@@ -47,13 +53,13 @@ sdk.start();
 
 3. Run your application with instrumentation:
 \`\`\`bash
-node --require ./instrument.js app.js
+node --require ./server/instrument.mjs server/index.js
 \`\`\`
 
 This will automatically instrument popular Node.js libraries including Express, HTTP, and database clients.`,
-        source: 'otel-docs',
+        source: 'otel-docs-node-instrumentation',
         metadata: {
-          type: 'setup',
+          type: 'instrumentation',
           language: 'javascript',
           framework: 'express'
         }
@@ -95,7 +101,7 @@ async function processOrder(order) {
   }
 }
 \`\`\``,
-        source: 'otel-docs',
+        source: 'otel-docs-instrumentation',
         metadata: {
           type: 'manual-instrumentation',
           language: 'javascript',
@@ -109,14 +115,18 @@ async function processOrder(order) {
 ## Setup Metrics
 
 \`\`\`javascript
-const { NodeSDK } = require('@opentelemetry/sdk-node');
-const { PeriodicExportingMetricReader } = require('@opentelemetry/sdk-metrics');
-const { OTLPMetricExporter } = require('@opentelemetry/exporter-metrics-otlp-http');
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 
 const sdk = new NodeSDK({
   metricReader: new PeriodicExportingMetricReader({
     exporter: new OTLPMetricExporter({
-      url: 'http://localhost:4318/v1/metrics',
+      url: 'http://api.honeycomb.io:4318/v1/metrics',
+      headers: {
+        'x-honeycomb-team': 'hcaik_xxxxxxxxxxxxxxxxxxxxxxx',  // replace with your honeycomb ingest key
+        'x-honeycomb-dataset': 'your_dataset_name'            // replace with your dataset name
+      },
     }),
     exportIntervalMillis: 5000,
   }),
@@ -124,7 +134,7 @@ const sdk = new NodeSDK({
 
 sdk.start();
 \`\`\``,
-        source: 'otel-docs',
+        source: 'otel-docs-instrumentation-metrics',
         metadata: {
           type: 'metrics',
           language: 'javascript',
@@ -132,138 +142,151 @@ sdk.start();
         }
       },
       {
-        title: 'Options for instrumenting OpenTelemetry on Node.js using LangChain',
+        title: 'Instrumenting LangChain with OpenTelemetry for Node.js',
         content: `
-You’ve got a few solid paths to get OpenTelemetry (OTel) traces out of a Node.js app that uses LangChain (or LangGraph). Here are the main options, from “fastest to value” to “most control.”
+# Instrumenting LangChain with OpenTelemetry
+## Overview
+This guide provides options for instrumenting LangChainJS applications with OpenTelemetry to capture detailed traces LLM operations, tools, and retrievers.
 
-1) LangChain/LangGraph + LangSmith with native OTel support
+## Instruction for instrumentation
+1) Install LangChainJS OpenTelemetry Instrumentation Package
+This package provides automatic instrumentation for LangChainJS, capturing spans for chains, tools, and retrievers.
+\`\`\`bash
+npm install --save @arizeai/openinference-instrumentation-langchain
+\`\`\`
 
-LangSmith now ingests and emits OpenTelemetry traces end-to-end. You can enable automatic instrumentation for LangChain/LangGraph and export via OTLP to LangSmith (or the other way around if LangSmith is your sink). This is the most “it just works” route if you already use LangSmith. 
-LangChain Blog
-+1
-LangSmith
-
-When to pick it: you’re already using LangSmith for tracing/evals and want OTel compatibility without wiring everything from scratch.
-
-2) Community auto-instrumentation for LangChainJS
-
-Use an OTel instrumentation package targeted at LangChainJS. The most common one is Traceloop’s:
-
-@traceloop/instrumentation-langchain (NPM) adds spans around chains, tools, models, vector DB calls, etc., and emits standard OTel data you can send to any OTLP backend (Datadog, New Relic, Grafana, Honeycomb, etc.). 
-npm
-Yarn
-
-Quick start (typical pattern):
+2) Add the following code to server/instrumentation.mjs to set up the instrumentation:
 \`\`\`javascript
-// instrumentation.ts
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { LangChainInstrumentation } from "@traceloop/instrumentation-langchain";
+// instrumentation.mjs
+import { LangChainInstrumentation } from "@arizeai/openinference-instrumentation-langchain";
+import * as CallbackManagerModule from "@langchain/core/callbacks/manager";
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+
+const lcInstrumentation = new LangChainInstrumentation();
+lcInstrumentation.manuallyInstrument(CallbackManagerModule);
 
 const sdk = new NodeSDK({
-  traceExporter: new OTLPTraceExporter({ /* endpoint, headers via env */ }),
+  traceExporter: new OTLPTraceExporter({
+    url: 'http://localhost:4318/v1/traces',
+    headers: {
+      'x-honeycomb-team': 'hcaik_xxxxxxxxxxxxxxxxxxxxxxx',  // replace with your honeycomb ingest key
+    },
+  }),
   instrumentations: [
-    getNodeAutoInstrumentations(),
-    new LangChainInstrumentation(),
+    getNodeAutoInstrumentations({
+      // We recommend disabling fs automatic instrumentation because 
+      // it can be noisy and expensive during startup
+      '@opentelemetry/instrumentation-fs': {
+        enabled: false,
+      },
+    }),
+    lcInstrumentation,
   ],
 });
 sdk.start();
 \`\`\`
 
-Then run your app with -r ./instrumentation.ts (or load it before your app’s entrypoint).
+3) Run your application with the instrumentation file:
+Then run your app with node --require ./server/instrumentation.mjs server/index.js (or load it before your app’s entrypoint).
 
-When to pick it: you want plug-and-play spans for LangChainJS and the freedom to send to any OTLP-compatible backend. (OTLP exporters are the standard way to ship data from OTel JS.) 
-OpenTelemetry
-
-3) DIY: OpenTelemetry JS SDK + manual spans around LangChain
-
-Wire OTel yourself and add spans around chain.invoke, tools, retrievers, embeddings, etc.
-
-Skeleton setup:
-\`\`\`javascript
-// otel.ts
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-
-export const sdk = new NodeSDK({
-  traceExporter: new OTLPTraceExporter(),
-  instrumentations: [getNodeAutoInstrumentations()],
-});
-sdk.start();
-\`\`\`
-
-\`\`\`javascript
-// app.ts
-import { trace } from "@opentelemetry/api";
-import { RunnableSequence } from "@langchain/core/runnables";
-// … set up your chain as usual …
-
-const tracer = trace.getTracer("app");
-const result = await tracer.startActiveSpan("chain.invoke", async (span) => {
-  try {
-    const out = await chain.invoke(input);
-    span.setAttribute("llm.tokens", out?.usage?.total_tokens ?? 0);
-    span.setAttribute("chain.name", "my_chain");
-    return out;
-  } finally {
-    span.end();
-  }
-});
-\`\`\`
-
-This route uses the standard OTel Node guide, plus the contrib auto-instrumentations where helpful, and the OTLP HTTP exporter to send data to your backend (e.g., Honeycomb’s OTLP ingest). 
-OpenTelemetry
-+1
-open-telemetry.github.io
-
-When to pick it: you want full control over span names/attributes/links and how LangChain operations map to your service topology.
-
-4) Vendor-specific examples built on OTel
-
-If you’re targeting a particular backend, there are ready-made recipes showing OTel + LangChain wiring:
-
-Microsoft/AI Foundry example exporting to Azure Application Insights. 
-TECHCOMMUNITY.MICROSOFT.COM
-
-New Relic’s step-by-step LangChain + OTel tracing tutorial. 
-New Relic
-
-Last9’s LangChain/LangGraph OTel guide (helpful patterns, tokens, state flows). 
-Last9
-
-Practical tips
-
-Use OTLP exporters. They’re the most interoperable path to send traces to almost any observability backend. 
-OpenTelemetry
-
-Start with auto-instrumentation, then add custom spans. Let an instrumentation package capture the basics, then layer in high-value custom attributes (prompt IDs, tool names, RAG source counts, reranker scores, token usage). Patterns in the Last9 and New Relic posts are handy. 
-Last9
-New Relic
-
-Keep prompts private when needed. Some instrumentations log prompts/outputs by default; turn that off (or scrub) if you handle sensitive data. (Example note from a Python package, but the privacy trade-off applies broadly.) 
-PyPI
-
-Map spans to user requests. If you’re serving HTTP, link request spans to chain/tool spans so you can see end-to-end latency and error propagation (use context propagation from the Node SDK). 
-OpenTelemetry
-+1
-
-Look for community examples. There are open repos showing LangChain/LangGraph with OTel shipping to vendors like New Relic. Great for copy-pasteable config. 
-GitHub
-
-If you tell me your preferred backend (e.g., Honeycomb with OTLP HTTP endpoint, headers, and dataset), I can drop in a working config tailored to it.
+## Practical tips
+- Use OTLP exporters. They’re the most interoperable path to send traces to almost any observability backend. 
+- Start with auto-instrumentation, then add custom spans. Let an instrumentation package capture the basics, then layer in high-value custom attributes (prompt IDs, tool names, RAG source counts, reranker scores, token usage). 
+- Keep prompts private when needed. Some instrumentations log prompts/outputs by default; turn that off (or scrub) if you handle sensitive data. (Example note from a Python package, but the privacy trade-off applies broadly.) 
+- Map spans to user requests. If you’re serving HTTP, link request spans to chain/tool spans so you can see end-to-end latency and error propagation (use context propagation from the Node SDK).
+- Look for community examples. There are open repos showing LangChain/LangGraph with OTel shipping to vendors like New Relic. Great for copy-pasteable config. 
 
         `,
-        source: 'otel-docs',
+        source: 'otel-docs-langchain-instrumentation',
         metadata: {
-          type: 'instrumentation',
+          type: 'instrumentation-langchain',
           language: 'javascritp',
           concept: 'observability'
         }
       },
       {
-        title: 'About HNY-AI-Workshop project',
+        title: 'OpenTelemetry Documentation',
+        source: 'otel-docs-react-web-instrumentation',
+        metadata: {
+          type: 'instrumentation-react-web',
+          language: 'javascript',
+          concept: 'observability'
+        },
+        content: `
+# Instrumenting React Web Applications with OpenTelemetry
+## Overview
+This guide provides options for instrumenting React web applications with OpenTelemetry to capture detailed traces of user.
+
+## Instruction for instrumentation
+1) Install OpenTelemetry packages:
+You must install the HFO (Honeycomb Frontend Observability) and required web auto-instrumentation packages in your React application. Run the following commands in your client directory:
+\`\`\`bash
+cd client
+npm install --save @honeycombio/opentelemetry-web
+npm install --save @opentelemetry/auto-instrumentations-web
+\`\`\`
+
+2) Create observability.jsx file
+Create a new file named observability.jsx in your client/src/components directory with the following content:
+\`\`\`javascript
+import { HoneycombWebSDK } from '@honeycombio/opentelemetry-web';
+import { getWebAutoInstrumentations } from '@opentelemetry/auto-instrumentations-web';
+
+const configDefaults = {
+  ignoreNetworkEvents: true,
+  // propagateTraceHeaderCorsUrls: [
+  // /.+/g, // Regex to match your backend URLs. Update to the domains you wish to include.
+  // ]
+}
+export default function Observability(){
+  try {
+    const sdk = new HoneycombWebSDK({
+      // endpoint: "https://api.eu1.honeycomb.io/v1/traces", // Send to EU instance of Honeycomb. Defaults to sending to US instance.
+      debug: true, // Set to false for production environment.
+      apiKey: 'hcaik_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx', // Replace with your Honeycomb Ingest API Key.
+      serviceName: 'chatbot-client', // Replace with your application name. Honeycomb uses this string to find your dataset when we receive your data. When no matching dataset exists, we create a new one with this name if your API Key has the appropriate permissions.
+      instrumentations: [getWebAutoInstrumentations({
+        // Loads custom configuration for xml-http-request instrumentation.
+        '@opentelemetry/instrumentation-xml-http-request': configDefaults,
+        '@opentelemetry/instrumentation-fetch': configDefaults,
+        '@opentelemetry/instrumentation-document-load': configDefaults,
+      })],
+    });
+    sdk.start();
+  } catch (e) {return null;}
+  return null;
+}
+\`\`\`
+
+3) Import and use the Observability component
+In your main application file (src/App.js), import and use the Observability component:
+\`\`\`javascript
+import React from 'react';
+...
+import Observability from './components/observability';
+
+...
+function App() {
+  return (
+    <AppContainer>
+      <GlobalStyle />
+      <ChatInterface />
+      <Observability />
+    </AppContainer>
+  );
+}
+
+export default App;
+\`\`\`
+4) Run your React application
+Run your React application as usual:
+
+`,
+      },
+      {
+        title: 'About AI-Workshop project (OpenTelemetry AI Chatbot)',
         content: `
 # Project Overview
 This is an AI-powered chatbot application specifically designed to help developers with OpenTelemetry integration and instrumentation. It's a full-stack JavaScript/Node.js application that combines modern web technologies with AI capabilities.
