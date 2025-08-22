@@ -25,6 +25,12 @@ class Server {
     this.app = express();
     this.app.set('trust proxy', 1);
     this.port = config.port;
+    if(process.env.CODESPACE_NAME) {
+      this.host = process.env.CODESPACE_NAME + '-3000.app.github.dev';
+    } else {
+      this.host = 'localhost:3000';
+    }
+    console.info("💻 host is " + this.host);
   }
 
   async initialize() {
@@ -73,9 +79,7 @@ class Server {
 
     // CORS configuration
     this.app.use(cors({
-      origin: config.nodeEnv === 'production' 
-        ? ['http://localhost:3000'] // Add your production domains here
-        : true,
+      origin: 'https://${{this.host}}',
       credentials: true
     }));
 
