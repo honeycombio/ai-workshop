@@ -40,9 +40,9 @@ An intelligent chatbot application designed to help developers with OpenTelemetr
 - Node.js 18+ 
 - npm or yarn
 - One or more LLM provider API keys:
-  - OpenAI API key
-  - Anthropic API key  
-  - AWS credentials (for Bedrock)
+  - OpenAI API key (mandatory)
+  - Anthropic API key  (optional)
+  - AWS credentials (for Bedrock, optional)
 
 ### Installation
 

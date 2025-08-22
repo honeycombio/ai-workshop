@@ -1,6 +1,6 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
-import { BedrockChat } from '@langchain/community/chat_models/bedrock';
+import { ChatBedrockConverse } from '@langchain/aws';
 import { config } from '../config/index.js';
 import logger from '../config/logger.js';
 
@@ -36,16 +36,14 @@ class LLMProviderService {
 
       // Initialize Bedrock
       if (config.llm.bedrock.accessKeyId && config.llm.bedrock.secretAccessKey) {
-        this.providers.set('bedrock', new BedrockChat({
+        this.providers.set('bedrock', new ChatBedrockConverse({
           model: config.llm.bedrock.model,
+          temperature: config.llm.temperature,
+          maxTokens: config.llm.maxTokens,
           region: config.llm.bedrock.region,
           credentials: {
             accessKeyId: config.llm.bedrock.accessKeyId,
             secretAccessKey: config.llm.bedrock.secretAccessKey
-          },
-          modelKwargs: {
-            temperature: config.llm.temperature,
-            max_tokens: config.llm.maxTokens
           }
         }));
         logger.info('Bedrock provider initialized');
