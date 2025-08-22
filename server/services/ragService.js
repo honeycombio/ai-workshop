@@ -30,7 +30,7 @@ Context information:
 
 User question: {question}
 
-Provide a helpful, accurate response based on the context above:`;
+Provide a helpful, accurate response based on the context above. think deeply and verify as much as possible.:`;
 
     this.promptTemplate = PromptTemplate.fromTemplate(this.systemPrompt);
   }
