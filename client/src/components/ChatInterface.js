@@ -271,11 +271,12 @@ const ChatInterface = () => {
   };
 
   const exampleQuestions = [
-    "How do I set up OpenTelemetry auto-instrumentation for a Node.js Express app?",
-    "What's the difference between manual and automatic instrumentation?",
+    "What are the steps to instrument a Node.js application with OpenTelemetry?",
     "How can I create custom spans in my Node.js application?",
     "How do I configure OpenTelemetry to export traces to Honeycomb?",
-    "What are the best practices for OpenTelemetry sampling?"
+    "How can I instrument LangChain with OpenTelemetry on Node.js?",
+    "How can I instrument React web applications with OpenTelemetry?",
+    "What is the difference between manual and automatic instrumentation in OpenTelemetry?",
   ];
 
   return (

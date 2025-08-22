@@ -59,6 +59,8 @@ An intelligent chatbot application designed to help developers with OpenTelemetr
    The quick start script is a one-for-all script that checks and installs all the required libraries and starts up the whole thing.
    Here are the layout of the individual steps that you can perform individually:
 
+   ***OPTIONAL***
+
    1. **Install dependencies**
       ```bash
       # install concurrently
@@ -119,7 +121,7 @@ An intelligent chatbot application designed to help developers with OpenTelemetr
       npm run start:all
       or
       scripts/quick-start.sh
-   ```
+      ```
 
 7. **Access the application**
    - Frontend: http://localhost:3000
@@ -140,7 +142,7 @@ An intelligent chatbot application designed to help developers with OpenTelemetr
    - "How do I set up auto-instrumentation for Express?"
    - "What's the difference between manual and automatic instrumentation?"
    - "How can I create custom spans?"
-   - "How do I configure sampling?"
+   - "How can I instrument react web?"
 
 ### API Endpoints
 
