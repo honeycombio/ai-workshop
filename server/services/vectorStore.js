@@ -162,7 +162,6 @@ class VectorStoreService {
         delete this.vectorStore.filter;
       }
       */
-      logger.info(`vectorStore filter: ${JSON.stringify(this.vectorStore.filter)}`);
       const results = await this.vectorStore.similaritySearchVectorWithScore(queryEmbedding, k, { search: "all" });
       logger.info(`Found ${results.length} similar documents with scores for query: "${query}"`);
       return results;

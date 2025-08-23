@@ -39,39 +39,64 @@ Provide a helpful, accurate response based on the context above. think deeply an
     try {
       logger.info(`Generating response for question: "${question}"`);
 
-      // Step 1: Retrieve relevant context from vector store
-      const relevantDocs = await vectorStore.similaritySearchWithScore(
-        question, 
-        maxContextDocs
-      );
-
-      // Step 2: Format context
-      const context = this.formatContext(relevantDocs);
-      
-      // Step 3: Get LLM provider
-      const llm = llmProvider.getProvider(providerName);
-
-      // Step 4: Create and run the chain
-      const chain = RunnableSequence.from([
-        this.promptTemplate,
-        llm,
-        new StringOutputParser()
+      // Create a runnable for vector search
+      const vectorSearchRunnable = RunnableSequence.from([
+        (input) => input.question, // Extract question from input object
+        async (question) => {
+          const results = await vectorStore.similaritySearchWithScore(question, maxContextDocs);
+          return { 
+            question,
+            relevantDocs: results
+          };
+        },
+        (input) => ({
+          context: this.formatContext(input.relevantDocs),
+          question: input.question,
+          relevantDocs: input.relevantDocs // Pass through for metadata
+        })
       ]);
 
-      const response = await chain.invoke({
-        context: context,
+      // Get LLM provider
+      const llm = llmProvider.getProvider(providerName);
+
+      // Create the complete chain
+      const chain = RunnableSequence.from([
+        vectorSearchRunnable,
+        {
+          context: (input) => input.context,
+          question: (input) => input.question,
+          relevantDocs: (input) => input.relevantDocs
+        },
+        {
+          context: (input) => input.context,
+          question: (input) => input.question,
+          llmResponse: async (input) => {
+            const response = await this.promptTemplate
+              .pipe(llm)
+              .pipe(new StringOutputParser())
+              .invoke({
+                context: input.context,
+                question: input.question
+              });
+            return response;
+          },
+          relevantDocs: (input) => input.relevantDocs
+        }
+      ]);
+
+      // Run the chain
+      const result = await chain.invoke({
         question: question
       });
 
-      // Step 5: Log and return response with metadata
+      // Format and return the response
       logger.info('Response generated successfully');
-      
       return {
-        response: response,
+        response: result.llmResponse,
         context: {
-          documentsUsed: relevantDocs.length,
-          sources: this.extractSources(relevantDocs),
-          relevanceScores: relevantDocs.map(([doc, score]) => ({
+          documentsUsed: result.relevantDocs.length,
+          sources: this.extractSources(result.relevantDocs),
+          relevanceScores: result.relevantDocs.map(([doc, score]) => ({
             source: doc.metadata?.source || 'unknown',
             score: score
           }))
