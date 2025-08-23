@@ -18,7 +18,7 @@ class DataIngestionService {
   constructor() {
     this.sampleDocuments = [
       {
-        title: 'Node.js Express Auto-instrumentation Setup',
+        title: 'Node.js Express OpenTelemetry Auto-instrumentation Setup for Honeycomb',
         content: `# Auto-instrumenting Node.js with OpenTelemetry
 
 ## Quick Start
@@ -40,6 +40,7 @@ const sdk = new NodeSDK({
     url: 'http://localhost:4318/v1/traces',
     headers: {
       'x-honeycomb-team': 'hcaik_xxxxxxxxxxxxxxxxxxxxxxx',  // replace with your honeycomb ingest key
+      'x-honeycomb-dataset': 'otel-ai-chatbot',
   }),
   instrumentations: [getNodeAutoInstrumentations(
     '@opentelemetry/instrumentation-fs': {
@@ -155,7 +156,7 @@ This guide provides options for instrumenting LangChainJS applications with Open
 1) Install LangChainJS OpenTelemetry Instrumentation Package
 This package provides automatic instrumentation for LangChainJS, capturing spans for chains, tools, and retrievers.
 \`\`\`bash
-npm install --save @arizeai/openinference-instrumentation-langchain
+npm install @arizeai/openinference-instrumentation-langchain
 \`\`\`
 
 2) Add the following code to server/instrumentation.mjs to set up the instrumentation:
