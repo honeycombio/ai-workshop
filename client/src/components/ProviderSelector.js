@@ -161,8 +161,8 @@ const ProviderSelector = ({ selectedProvider, onProviderChange }) => {
 
   const getProviderDescription = (provider) => {
     const descriptions = {
-      openai: 'GPT-4 and GPT-3.5 models',
-      anthropic: 'Claude 3 models',
+      openai: 'GPT models',
+      anthropic: 'Claude',
       bedrock: 'AWS managed AI models'
     };
     return descriptions[provider] || 'AI language model';

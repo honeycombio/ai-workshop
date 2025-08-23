@@ -1,5 +1,6 @@
 import { Chroma } from '@langchain/community/vectorstores/chroma';
 import { OpenAIEmbeddings } from '@langchain/openai';
+import { BedrockEmbeddings } from '@langchain/aws';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { Document } from '@langchain/core/documents';
 import { config } from '../config/index.js';
@@ -16,10 +17,23 @@ class VectorStoreService {
   async initialize() {
     try {
       // Initialize embeddings
-      this.embeddings = new OpenAIEmbeddings({
-        openAIApiKey: config.llm.openai.apiKey,
-        modelName: 'text-embedding-ada-002'
-      });
+      if (config.llm.defaultProvider === 'openai' || config.llm.defaultProvider === 'anthropic') {
+        this.embeddings = new OpenAIEmbeddings({
+          openAIApiKey: config.llm.openai.apiKey,
+          modelName: 'text-embedding-ada-002'
+        });
+      } else if (config.llm.defaultProvider === 'bedrock') {
+        this.embeddings = new BedrockEmbeddings({
+          model: 'amazon.titan-embed-text-v1',
+          region: config.llm.bedrock.region,
+          credentials: {
+            accessKeyId: config.llm.bedrock.accessKeyId,
+            secretAccessKey: config.llm.bedrock.secretAccessKey
+          }
+        })
+      } else {
+        throw new Error(`Unsupported LLM provider: ${config.default.llm.provider}`);
+      }
 
       // Initialize text splitter
       this.textSplitter = new RecursiveCharacterTextSplitter({
@@ -124,14 +138,13 @@ class VectorStoreService {
     try {
       // Using the vectorStore's underlying client for direct search
       const queryEmbedding = await this.embeddings.embedQuery(query);
+      /*
       const col = await this.vectorStore.ensureCollection();
       const results = await col.query({
         queryEmbeddings: [queryEmbedding],
         k,
       });
-      // log how many results were found
       logger.info(`Found ${results.ids?.length} similar documents with scores for query: "${query}"`);
-
       const tuples = (results.ids?.[0] || []).map((_, i) => [
         new Document({
           pageContent: results.documents?.[0]?.[i] || "",
@@ -141,6 +154,18 @@ class VectorStoreService {
       ]);
 
       return tuples;
+      */
+      /*
+      if ('filter' in this.vectorStore && this.vectorStore.filter && !Object.keys(this.vectorStore.filter).length) {
+        // remove accidental empty filter {}
+        // @ts-ignore
+        delete this.vectorStore.filter;
+      }
+      */
+      logger.info(`vectorStore filter: ${JSON.stringify(this.vectorStore.filter)}`);
+      const results = await this.vectorStore.similaritySearchVectorWithScore(queryEmbedding, k, { search: "all" });
+      logger.info(`Found ${results.length} similar documents with scores for query: "${query}"`);
+      return results;
     } catch (error) {
       logger.error('Error performing similarity search with scores:', error);
       throw error;

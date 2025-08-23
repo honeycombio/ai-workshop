@@ -59,6 +59,7 @@ node --require ./server/instrument.mjs server/index.js
 This will automatically instrument popular Node.js libraries including Express, HTTP, and database clients.`,
         source: 'otel-docs-node-instrumentation',
         metadata: {
+          search: 'all',
           type: 'instrumentation',
           language: 'javascript',
           framework: 'express'
@@ -103,6 +104,7 @@ async function processOrder(order) {
 \`\`\``,
         source: 'otel-docs-instrumentation',
         metadata: {
+          search: 'all',
           type: 'manual-instrumentation',
           language: 'javascript',
           concept: 'spans'
@@ -136,6 +138,7 @@ sdk.start();
 \`\`\``,
         source: 'otel-docs-instrumentation-metrics',
         metadata: {
+          search: 'all',
           type: 'metrics',
           language: 'javascript',
           concept: 'observability'
@@ -201,6 +204,7 @@ Then run your app with node --require ./server/instrumentation.mjs server/index.
         `,
         source: 'otel-docs-langchain-instrumentation',
         metadata: {
+          search: 'all',
           type: 'instrumentation-langchain',
           language: 'javascritp',
           concept: 'observability'
@@ -210,6 +214,7 @@ Then run your app with node --require ./server/instrumentation.mjs server/index.
         title: 'OpenTelemetry Documentation',
         source: 'otel-docs-react-web-instrumentation',
         metadata: {
+          search: 'all',
           type: 'instrumentation-react-web',
           language: 'javascript',
           concept: 'observability'
@@ -446,6 +451,7 @@ DELETE /api/admin/vector-store: Reset store
         `,
         source: 'ai-workshop',
         metadata: {
+          search: 'all',
           type: 'project overview',
           language: 'javascript',
           concept: 'project'

@@ -3,6 +3,7 @@ import { validateChatMessage, handleValidationErrors } from '../middleware/valid
 import ragService from '../services/ragService.js';
 import llmProvider from '../services/llmProvider.js';
 import logger from '../config/logger.js';
+import { config } from '../config/index.js';
 
 const router = express.Router();
 
@@ -75,12 +76,13 @@ router.get('/context', async (req, res) => {
 router.get('/providers', (req, res) => {
   try {
     const providers = llmProvider.getAvailableProviders();
+    const default_provider = config.llm.defaultProvider
     
     res.json({
       success: true,
       data: {
         providers,
-        default: providers[0] || null
+        default: default_provider || null
       }
     });
 
