@@ -457,6 +457,93 @@ DELETE /api/admin/vector-store: Reset store
           language: 'javascript',
           concept: 'project'
         }
+      },
+      {
+        title: 'How to instrument me, the otel-ai-chatbot application to Honeycomb',
+        content: `
+# How to instrument me, the otel-ai-chatbot application
+
+## Overview
+This guide provides options for instrumenting myself, the otel-ai-chatbot application, with OpenTelemetry to capture detailed traces of user interactions, to Honeycomb.
+
+## Instruction for instrumentation
+1) Install OpenTelemetry packages in your client directory:
+You must install the HFO (Honeycomb Frontend Observability) and required web auto-instrumentation packages in your React application. Run the following commands in your client directory:
+\`\`\`bash
+cd client
+npm install --save @honeycombio/opentelemetry-web
+npm install --save @opentelemetry/auto-instrumentations-web
+\`\`\`
+
+
+2) Create observability.jsx file
+Create a new file named observability.jsx in your client/src/components directory with the following content:
+\`\`\`javascript
+import { HoneycombWebSDK } from '@honeycombio/opentelemetry-web';
+import { getWebAutoInstrumentations } from '@opentelemetry/auto-instrumentations-web';
+
+const configDefaults = {
+  ignoreNetworkEvents: true,
+  // propagateTraceHeaderCorsUrls: [
+  // /.+/g, // Regex to match your backend URLs. Update to the domains you wish to include.
+  // ]
+}
+export default function Observability(){
+  try {
+    const sdk = new HoneycombWebSDK({
+      // endpoint: "https://api.eu1.honeycomb.io/v1/traces", // Send to EU instance of Honeycomb. Defaults to sending to US instance.
+      debug: true, // Set to false for production environment.
+      apiKey: 'hcaik_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx', // Replace with your Honeycomb Ingest API Key.
+      serviceName: 'chatbot-client', // Replace with your application name. Honeycomb uses this string to find your dataset when we receive your data. When no matching dataset exists, we create a new one with this name if your API Key has the appropriate permissions.
+      instrumentations: [getWebAutoInstrumentations({
+        // Loads custom configuration for xml-http-request instrumentation.
+        '@opentelemetry/instrumentation-xml-http-request': configDefaults,
+        '@opentelemetry/instrumentation-fetch': configDefaults,
+        '@opentelemetry/instrumentation-document-load': configDefaults,
+      })],
+    });
+    sdk.start();
+  } catch (e) {return null;}
+  return null;
+}
+\`\`\`
+
+3) Import and use the Observability component
+In your main application file (src/App.js), import and use the Observability component:
+\`\`\`javascript
+import React from 'react';
+...
+import Observability from './components/observability';
+
+...
+function App() {
+  return (
+    <AppContainer>
+      <GlobalStyle />
+      <ChatInterface />
+      <Observability />
+    </AppContainer>
+  );
+}
+
+export default App;
+\`\`\`
+
+4) Run your React application
+Rerun your React application as usual:
+\`\`\`bash
+npm run stop:all
+scripts/quick-start.sh
+\`\`\`
+
+        `,
+        source: 'how-to-instrument-otel-ai-chatbot',
+        metadata: {
+          search: 'all',
+          type: 'how-to',
+          language: 'javascript',
+          concept: 'instrumentation'
+        }
       }
     ];
   }
