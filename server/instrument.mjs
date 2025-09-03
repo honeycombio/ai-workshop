@@ -1,6 +1,11 @@
+import { LangChainInstrumentation } from "@arizeai/openinference-instrumentation-langchain";
+import * as CallbackManagerModule from "@langchain/core/callbacks/manager";
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+
+const lcInstrumentation = new LangChainInstrumentation();
+lcInstrumentation.manuallyInstrument(CallbackManagerModule);
 
 const sdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter(
@@ -17,6 +22,7 @@ const sdk = new NodeSDK({
         enabled: false,
       }
     }),
+    lcInstrumentation,
   ],
 });
 

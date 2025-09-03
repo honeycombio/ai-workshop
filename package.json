@@ -27,6 +27,7 @@
   "author": "Howard Yoo",
   "license": "MIT",
   "dependencies": {
+    "@arizeai/openinference-instrumentation-langchain": "^3.4.2",
     "@langchain/anthropic": "^0.3.26",
     "@langchain/aws": "^0.1.14",
     "@langchain/community": "^0.0.20",
