@@ -25,28 +25,32 @@ class DataIngestionService {
 
 1. Install the required packages:
 \`\`\`bash
-npm install @opentelemetry/auto-instrumentations-node
-npm install @opentelemetry/exporter-trace-otlp-http
+npm install --save @opentelemetry/auto-instrumentations-node
+npm install --save @opentelemetry/exporter-trace-otlp-http
 \`\`\`
 
 2. Create an instrumentation file (instrument.mjs) in ./server directory:
 \`\`\`javascript
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 
 const sdk = new NodeSDK({
-  traceExporter: new OTLPTraceExporter({
-    url: 'http://localhost:4318/v1/traces',
-    headers: {
-      'x-honeycomb-team': 'hcaik_xxxxxxxxxxxxxxxxxxxxxxx',  // replace with your honeycomb ingest key
-      'x-honeycomb-dataset': 'otel-ai-chatbot',
-  }),
-  instrumentations: [getNodeAutoInstrumentations(
-    '@opentelemetry/instrumentation-fs': {
+  traceExporter: new OTLPTraceExporter(
+    {
+        url: 'https://api.honeycomb.io/v1/traces',
+        headers: {
+            'x-honeycomb-team': '<YOUR_API_KEY>',
+        }
+    }
+  ),
+  instrumentations: [
+    getNodeAutoInstrumentations({
+      '@opentelemetry/instrumentation-fs': {
         enabled: false,
-    },
-  )],
+      }
+    }),
+  ],
 });
 
 sdk.start();

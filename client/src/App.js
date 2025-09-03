@@ -1,6 +1,7 @@
 import React from 'react';
 import styled, { createGlobalStyle } from 'styled-components';
 import ChatInterface from './components/ChatInterface';
+import Observability from './components/observability';
 
 const GlobalStyle = createGlobalStyle`
   * {
@@ -78,6 +79,7 @@ function App() {
     <AppContainer>
       <GlobalStyle />
       <ChatInterface />
+      <Observability />
     </AppContainer>
   );
 }
