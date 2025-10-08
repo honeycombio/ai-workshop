@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "@honeycombio/opentelemetry-web": "^1.0.1",
     "@opentelemetry/auto-instrumentations-web": "^0.49.1",
     "@honeycombio/opentelemetry-web": "^1.0.3",
     "axios": "^1.6.2",
