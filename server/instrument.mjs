@@ -1,3 +1,4 @@
+import 'dotenv/config';  // auto-loads .env
 import { LangChainInstrumentation } from "@arizeai/openinference-instrumentation-langchain";
 import * as CallbackManagerModule from "@langchain/core/callbacks/manager";
 import { NodeSDK } from '@opentelemetry/sdk-node';
@@ -12,7 +13,7 @@ const sdk = new NodeSDK({
     {
         url: 'https://api.honeycomb.io/v1/traces',
         headers: {
-            'x-honeycomb-team': 'hcaik_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+            'x-honeycomb-team': process.env.HONEYCOMB_API_KEY,
         }
     }
   ),
