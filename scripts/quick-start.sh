@@ -51,7 +51,6 @@ fi
 # Install Node.js dependencies
 echo "📦 Installing Node.js dependencies..."
 npm install
-npm install --save-dev concurrently
 cd client && npm install && cd ..
 
 echo "✅ Dependencies installed"
