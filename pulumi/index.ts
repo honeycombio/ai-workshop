@@ -551,6 +551,7 @@ const firehoseDeliveryStream = new aws.kinesis.FirehoseDeliveryStream(`${appName
         url: pulumi.interpolate`https://api.honeycomb.io/1/kinesis_events/${appName}-${environment}`,
         name: "Honeycomb",
         accessKey: config.requireSecret("honeycombApiKey"),
+        roleArn: firehoseRole.arn,
         s3BackupMode: "FailedDataOnly",
         s3Configuration: {
             roleArn: firehoseRole.arn,
