@@ -10,13 +10,41 @@ const tracer = trace.getTracer('tokenization', '1.0.0');
 // post-call usage report:
 //   1. Budget enforcement — reject prompts above maxInputTokens *before*
 //      paying for an LLM call that's going to be wasted.
-//   2. Early visibility — `gen_ai.usage.input_tokens.estimated` lands on the
-//      span even when the LLM call fails partway through (timeouts, 5xx),
-//      so cost/usage attribution still works for errored requests.
+//   2. Early visibility — the estimated input-token count is attached to the
+//      *enclosing chat span* (alongside `gen_ai.usage.input_tokens` once the
+//      model responds), so cost/usage attribution still works for requests
+//      that error before the LLM finishes. The attribute is set by the
+//      caller on the chat span, not on the `gen_ai.tokenize` span itself,
+//      so consumers can compare estimated-vs-actual within one row.
 //
 // Synchronous and CPU-bound on the Node.js event loop. Sized to be cheap
 // relative to LLM call latency (~100-200 ms vs ~20 s end-to-end), but it
 // *will* queue up behind itself if the ECS task is starved for CPU.
+//
+// PRODUCTION ALTERNATIVE — worker-thread offload (intentionally NOT enabled
+// here because the workshop wants the tokenizer to compete with the Node
+// event loop under load; that's the CPU-bound bottleneck story Module 3
+// explores). For real deployments, move the synchronous countTokens call
+// into a worker so the event loop isn't blocked:
+//
+//   // tokenizer-worker.js
+//   import { parentPort } from 'node:worker_threads';
+//   import { countTokens } from '@anthropic-ai/tokenizer';
+//   parentPort.on('message', (text) => parentPort.postMessage(countTokens(text)));
+//
+//   // tokenization.js (worker variant)
+//   import { Worker } from 'node:worker_threads';
+//   const worker = new Worker(new URL('./tokenizer-worker.js', import.meta.url));
+//   export function tokenizePromptAsync(prompt) {
+//     return new Promise((resolve, reject) => {
+//       worker.once('message', resolve);
+//       worker.once('error', reject);
+//       worker.postMessage(prompt);
+//     });
+//   }
+//
+// That version returns a promise that resolves off-thread, so the main
+// thread keeps serving other requests while one is being tokenized.
 export function tokenizePrompt(prompt, { modelName, maxInputTokens } = {}) {
   return tracer.startActiveSpan(
     'gen_ai.tokenize',
@@ -31,12 +59,7 @@ export function tokenizePrompt(prompt, { modelName, maxInputTokens } = {}) {
       const start = Date.now();
       try {
         const tokens = countTokens(prompt);
-        const durationMs = Date.now() - start;
-
-        span.setAttributes({
-          'gen_ai.usage.input_tokens.estimated': tokens,
-          'duration_ms': durationMs,
-        });
+        span.setAttribute('duration_ms', Date.now() - start);
 
         if (maxInputTokens && tokens > maxInputTokens) {
           const err = new Error(

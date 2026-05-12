@@ -200,20 +200,24 @@ Provide a helpful, accurate response based on the context above. think deeply an
             });
 
             // CPU-bound BPE tokenization + input-budget enforcement.
-            // Sets `gen_ai.usage.input_tokens.estimated` on the tokenize span
-            // and throws `InputTokenBudgetExceeded` if the prompt is too big.
+            // Throws `InputTokenBudgetExceeded` if the prompt is too big.
             const estimatedInputTokens = tokenizePrompt(formattedPrompt, {
               modelName: config.llm.bedrock.model,
               maxInputTokens: config.llm.maxInputTokens,
             });
-            llmSpan.setAttribute(
-              'gen_ai.usage.input_tokens.estimated',
-              estimatedInputTokens,
-            );
 
-            const response = await llm
-              .pipe(new StringOutputParser())
-              .invoke(formattedPrompt);
+            // Wrap the LLM call in `traceLLMCall` so a `chat <model>` span
+            // exists with GenAI semconv attributes. We attach the estimate as
+            // initial metadata on that span so it lives alongside the model's
+            // actual `gen_ai.usage.input_tokens` (set on the same span when
+            // the response returns) — making estimated-vs-actual comparable
+            // within a single row in Honeycomb.
+            const response = await traceLLMCall(
+              actualProvider,
+              config.llm.bedrock.model,
+              () => llm.pipe(new StringOutputParser()).invoke(formattedPrompt),
+              { 'gen_ai.usage.input_tokens.estimated': estimatedInputTokens },
+            );
 
             const duration = Date.now() - llmStartTime;
 
