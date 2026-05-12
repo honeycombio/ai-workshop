@@ -9,7 +9,7 @@ An intelligent chatbot application designed to help developers with OpenTelemetr
 - **OpenTelemetry Expertise**: Pre-loaded with comprehensive OpenTelemetry documentation
 - **Modern Web Interface**: Clean, responsive React-based chat interface
 - **Source Attribution**: Shows which documents were used to generate responses with relevance scores
-- **Cloud-Native Architecture**: Amazon OpenSearch Service for vector storage with k-NN search
+- **Cloud-Native Architecture**: Amazon OpenSearch Serverless (VECTORSEARCH collection) for k-NN vector search
 - **Automated Infrastructure**: Pulumi-managed AWS deployment with automated Docker builds
 - **Secure Configuration**: Pulumi ESC for secrets and configuration management
 
@@ -30,12 +30,12 @@ An intelligent chatbot application designed to help developers with OpenTelemetr
                            ┌─────────────────────────┴───────────┐
                            │                                     │
                     ┌──────▼──────┐                    ┌────────▼────────┐
-                    │  AWS Bedrock│                    │   OpenSearch    │
-                    │  Claude 3.5 │                    │   (k-NN Index)  │
-                    │   Sonnet    │                    │                 │
-                    │  - IAM Role │                    │  - VPC Private  │
+                    │  AWS Bedrock│                    │  OpenSearch     │
+                    │  Claude 3.5 │                    │  Serverless     │
+                    │   Sonnet    │                    │  (VECTORSEARCH) │
+                    │  - IAM Role │                    │  - SigV4 auth   │
                     │    Auth     │                    │  - 1536 dims    │
-                    └─────────────┘                    │  - HNSW algo    │
+                    └─────────────┘                    │  - HNSW / faiss │
                                                        └─────────────────┘
                            │
                     ┌──────▼──────────┐
@@ -76,28 +76,27 @@ An intelligent chatbot application designed to help developers with OpenTelemetr
    pulumi config set aws:region us-east-1
    ```
 
-4. **Set OpenSearch master password**
-   ```bash
-   pulumi config set --secret opensearchMasterPassword <strong-password>
-   ```
-
-5. **Deploy infrastructure** (automatically builds and pushes Docker image)
+4. **Deploy infrastructure** (automatically builds and pushes Docker image)
    ```bash
    pulumi env run <esc-environment> -i -- pulumi up
    ```
 
-   **First deployment takes ~15-20 minutes** due to Docker build and OpenSearch domain creation.
+   **First deployment takes ~5-7 minutes** — OpenSearch Serverless provisions in
+   ~1-3 minutes (vs ~15-60 for a managed domain), and most of the remaining time
+   is the Docker build.
 
-6. **Ingest OpenTelemetry documentation to OpenSearch**
+5. **Ingest OpenTelemetry documentation to OpenSearch**
    ```bash
    cd ..
-   export USE_OPENSEARCH=true
    export OPENSEARCH_ENDPOINT=$(cd pulumi && pulumi stack output opensearchEndpoint)
-   export OPENSEARCH_USERNAME=admin
-   export OPENSEARCH_PASSWORD=<your-opensearch-password>
+   export OPENSEARCH_SERVICE=aoss
 
    pulumi env run <esc-environment> -i -- node scripts/ingest-data.js
    ```
+
+   Serverless uses SigV4 — no username or password. The principal listed in the
+   Pulumi data access policy (the ECS task role and the deploying caller) gets
+   read/write to the collection automatically.
 
 7. **Access the application**
    ```bash
@@ -201,9 +200,8 @@ In production, AWS credentials are provided automatically via IAM role (no keys 
 #### Vector Store Configuration (OpenSearch)
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OPENSEARCH_ENDPOINT` | OpenSearch HTTPS endpoint | From Pulumi output |
-| `OPENSEARCH_USERNAME` | OpenSearch user | admin |
-| `OPENSEARCH_PASSWORD` | OpenSearch password | From Secrets Manager |
+| `OPENSEARCH_ENDPOINT` | OpenSearch Serverless collection endpoint | From Pulumi output |
+| `OPENSEARCH_SERVICE` | SigV4 service name (`aoss` for Serverless, `es` for managed) | aoss |
 | `OPENSEARCH_INDEX` | Index name | otel_knowledge |
 
 ### Adding Custom Documentation
@@ -286,11 +284,12 @@ The RAG service uses a three-stage pipeline:
 - Production: IAM role credentials (automatic, no keys needed)
 - Uses Bedrock embeddings for vector search (1536 dimensions)
 
-#### OpenSearch Vector Store
-- Amazon OpenSearch Service with k-NN enabled
-- HNSW algorithm for efficient similarity search
+#### OpenSearch Serverless Vector Store
+- Amazon OpenSearch Serverless `VECTORSEARCH` collection (no nodes to manage)
+- HNSW + faiss engine for efficient similarity search
 - Bulk indexing support for documentation ingestion
-- Private subnet deployment for security
+- SigV4 (IAM) auth via data access policy — no master user/password
+- Public endpoint with IAM-only data access; switch to a VPC endpoint for prod
 
 ## ☁️ AWS Deployment with Pulumi
 
@@ -300,7 +299,7 @@ The `pulumi/` directory contains complete infrastructure-as-code for deploying t
 
 - **Automated Docker Builds**: Pulumi builds and pushes Docker images automatically to ECR
 - **Single Container Architecture**: Both React frontend and Express API in one container
-- **OpenSearch Vector Store**: Amazon OpenSearch Service with k-NN enabled for vector search
+- **OpenSearch Vector Store**: Amazon OpenSearch Serverless VECTORSEARCH collection for k-NN search
 - **ECS Fargate**: Serverless container orchestration
 - **Application Load Balancer**: Serves both frontend (on `/`) and backend API (on `/api/*`)
 - **Pulumi ESC Integration**: All secrets and AWS credentials managed through ESC
@@ -313,10 +312,10 @@ The `pulumi/` directory contains complete infrastructure-as-code for deploying t
 | **ECR Repository** | Private container registry | Vulnerability scanning enabled |
 | **Docker Image** | Automated build & push | Multi-stage build (Node.js 18) |
 | **VPC** | Network isolation | 2 AZs, public/private subnets |
-| **OpenSearch** | Vector database with k-NN | t3.small.search, 10GB storage |
+| **OpenSearch Serverless** | Vector search collection | VECTORSEARCH, OCU-based capacity |
 | **ECS Fargate** | Container orchestration | 0.5 vCPU, 1GB memory |
 | **ALB** | Load balancer | HTTP (port 80), health checks |
-| **Secrets Manager** | API keys storage | OpenSearch password |
+| **Secrets Manager** | API keys storage | Honeycomb API key |
 | **CloudWatch Logs** | Application logs | 7-day retention |
 
 ### Using Pulumi ESC in Deployment
@@ -348,12 +347,10 @@ After deployment, ingest OpenTelemetry documentation to OpenSearch:
 
 ```bash
 # Set environment variables
-export USE_OPENSEARCH=true
 export OPENSEARCH_ENDPOINT=$(cd pulumi && pulumi stack output opensearchEndpoint)
-export OPENSEARCH_USERNAME=admin
-export OPENSEARCH_PASSWORD=<your-opensearch-password>
+export OPENSEARCH_SERVICE=aoss
 
-# Run ingestion script with Pulumi ESC
+# Run ingestion script with Pulumi ESC (SigV4 creds come from ESC)
 pulumi env run honeycomb-pulumi-workshop/ws -i -- node scripts/ingest-data.js
 ```
 
@@ -363,14 +360,14 @@ pulumi env run honeycomb-pulumi-workshop/ws -i -- node scripts/ingest-data.js
 - **ECS Service**: `pulumi stack output ecsServiceName`
 - **CloudWatch Logs**: `/aws/ecs/otel-ai-chatbot-logs`
 - **Health Check**: `http://<alb-url>/api/health`
-- **OpenSearch Dashboards**: Accessible via VPN/bastion (private subnet)
+- **OpenSearch Dashboards**: `pulumi stack output opensearchDashboard` (public URL, IAM-gated)
 
 ### Cost Estimation
 
 | Service | Configuration | Estimated Monthly Cost |
 |---------|--------------|----------------------|
 | ECS Fargate | 0.5 vCPU, 1GB, 24/7 | ~$15 |
-| OpenSearch | t3.small.search, 10GB | ~$40 |
+| OpenSearch Serverless | 2 OCU minimum (workshop usage) | ~$170 (per-hour OCU) |
 | ALB | Basic usage | ~$18 |
 | NAT Gateway | Single gateway | ~$32 |
 | ECR | ~10 images | ~$0.30 |
@@ -410,15 +407,15 @@ For detailed deployment instructions, see:
      ```bash
      pulumi env run <esc-environment> -i -- aws sts get-caller-identity
      ```
-   - Verify OpenSearch password is set: `pulumi config get opensearchMasterPassword`
+   - Verify the data access policy lists both the ECS task role and your caller ARN: `aws opensearchserverless list-access-policies --type data`
    - Check Docker is running (required for automated builds)
    - Review Pulumi logs: `pulumi up --logtostderr -v=9`
 
 2. **OpenSearch connection errors**
-   - Verify OpenSearch domain is healthy in AWS Console
-   - Check security group allows ECS tasks to access OpenSearch (port 443)
-   - Verify credentials in Secrets Manager
-   - OpenSearch domain creation takes 10-15 minutes on first deployment
+   - Verify the collection is `ACTIVE`: `aws opensearchserverless list-collections`
+   - Check the data access policy includes the calling principal's ARN
+   - Verify the ECS task role has the `aoss:APIAccessAll` IAM permission on the collection
+   - Serverless collections become queryable within ~1-3 minutes of creation
 
 3. **ECS tasks failing health checks**
    - Check CloudWatch Logs: `/aws/ecs/otel-ai-chatbot-logs`

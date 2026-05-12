@@ -152,29 +152,6 @@ const ecsSecurityGroup = new aws.ec2.SecurityGroup(`${appName}-ecs-sg`, {
     tags: {...tags, Name: `${appName}-ecs-sg`},
 });
 
-// OpenSearch Security Group
-const openSearchSecurityGroup = new aws.ec2.SecurityGroup(`${appName}-opensearch-sg`, {
-    vpcId: vpc.vpcId,
-    description: "Security group for OpenSearch",
-    ingress: [
-        {
-            protocol: "tcp",
-            fromPort: 443,
-            toPort: 443,
-            securityGroups: [ecsSecurityGroup.id],
-            description: "Allow HTTPS from ECS tasks",
-        },
-    ],
-    egress: [{
-        protocol: "-1",
-        fromPort: 0,
-        toPort: 0,
-        cidrBlocks: ["0.0.0.0/0"],
-        description: "Allow all outbound traffic",
-    }],
-    tags: {...tags, Name: `${appName}-opensearch-sg`},
-});
-
 // =============================================================================
 // IAM Roles
 // =============================================================================
@@ -220,20 +197,14 @@ const secretsManagerSecret = new aws.secretsmanager.Secret(`${appName}-secrets`,
     tags: tags,
 });
 
-// Note: OpenSearch password and Honeycomb API key - Bedrock uses IAM role for authentication
+// Honeycomb API key only — OpenSearch Serverless uses SigV4 (IAM), no password to store.
+// Bedrock also uses IAM role for authentication.
 const secretVersion = new aws.secretsmanager.SecretVersion(`${appName}-secrets-version`, {
     secretId: secretsManagerSecret.id,
-    secretString: pulumi.all([
-        config.requireSecret("opensearchMasterPassword"),
-        config.requireSecret("honeycombApiKey"),
-    ]).apply(([opensearchPassword, honeycombApiKey]) => {
-        const secretObj = {
-            OPENSEARCH_PASSWORD: opensearchPassword,
-            HONEYCOMB_API_KEY: honeycombApiKey,
-            OTEL_EXPORTER_OTLP_HEADERS: `x-honeycomb-team=${honeycombApiKey}`,
-        };
-        return JSON.stringify(secretObj);
-    }),
+    secretString: config.requireSecret("honeycombApiKey").apply(honeycombApiKey => JSON.stringify({
+        HONEYCOMB_API_KEY: honeycombApiKey,
+        OTEL_EXPORTER_OTLP_HEADERS: `x-honeycomb-team=${honeycombApiKey}`,
+    })),
 });
 
 // Grant ECS task access to secrets
@@ -253,82 +224,96 @@ const secretsPolicy = new aws.iam.RolePolicy(`${appName}-secrets-policy`, {
 });
 
 // =============================================================================
-// OpenSearch Domain
+// OpenSearch Serverless (Vector Search)
 // =============================================================================
+//
+// Serverless provisions in ~1-3 minutes vs ~15-60 for managed domains.
+// Auth is SigV4-only via IAM data access policies (no master user/password).
+// Public network access keeps the workshop simple; lock down via VPC endpoint
+// (AWS::OpenSearchServerless::VpcEndpoint) in production.
 
-// OpenSearch Service Linked Role
-// Note: This role is a singleton per AWS account. If you get an error that the role
-// already exists, you can import it with:
-// pulumi import aws:iam/serviceLinkedRole:ServiceLinkedRole opensearch-service-linked-role arn:aws:iam::<account-id>:role/aws-service-role/es.amazonaws.com/AWSServiceRoleForAmazonElasticsearchService
-const opensearchSlr = new aws.iam.ServiceLinkedRole("opensearch-service-linked-role", {
-    awsServiceName: "es.amazonaws.com"
+const collectionName = `${appName}-${environment}`;
+
+// Encryption policy — required. Use AWS-owned key for workshop simplicity.
+const encryptionPolicy = new aws.opensearch.ServerlessSecurityPolicy(`${appName}-aoss-encryption`, {
+    name: `${appName}-${environment}-enc`,
+    type: "encryption",
+    policy: JSON.stringify({
+        Rules: [{
+            ResourceType: "collection",
+            Resource: [`collection/${collectionName}`],
+        }],
+        AWSOwnedKey: true,
+    }),
 });
 
-const openSearchDomain = new aws.opensearch.Domain(`${appName}-opensearch`, {
-    domainName: `${appName}-${environment}`,
-    engineVersion: "OpenSearch_3.1",
-    clusterConfig: {
-        instanceType: "m8g.large.search",
-        instanceCount: 2,
-        dedicatedMasterEnabled: false,
-        zoneAwarenessEnabled: false,
-    },
-    ebsOptions: {
-        ebsEnabled: true,
-        volumeSize: 100,
-        volumeType: "gp3",
-    },
-    encryptAtRest: {
-        enabled: true,
-    },
-    nodeToNodeEncryption: {
-        enabled: true,
-    },
-    domainEndpointOptions: {
-        enforceHttps: true,
-        tlsSecurityPolicy: "Policy-Min-TLS-1-2-2019-07",
-    },
-    vpcOptions: {
-        subnetIds: [vpc.privateSubnetIds[0]],
-        securityGroupIds: [openSearchSecurityGroup.id],
-    },
-    advancedSecurityOptions: {
-        enabled: true,
-        internalUserDatabaseEnabled: false,
-        masterUserOptions: {
-            masterUserArn: ecsTaskRole.arn,
-        },
-    },
-    accessPolicies: pulumi.interpolate`{
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Principal": {
-                    "AWS": "${ecsTaskRole.arn}"
+// Network policy — public access for the collection's data plane and dashboards.
+const networkPolicy = new aws.opensearch.ServerlessSecurityPolicy(`${appName}-aoss-network`, {
+    name: `${appName}-${environment}-net`,
+    type: "network",
+    policy: JSON.stringify([{
+        Rules: [
+            {ResourceType: "collection", Resource: [`collection/${collectionName}`]},
+            {ResourceType: "dashboard", Resource: [`collection/${collectionName}`]},
+        ],
+        AllowFromPublic: true,
+    }]),
+});
+
+// Data access policy — grant the ECS task role (and the deploying principal,
+// for ingestion via scripts/) full vector/index/document permissions.
+const dataAccessPolicy = new aws.opensearch.ServerlessAccessPolicy(`${appName}-aoss-data`, {
+    name: `${appName}-${environment}-data`,
+    type: "data",
+    policy: pulumi.all([ecsTaskRole.arn, aws.getCallerIdentityOutput().arn]).apply(
+        ([taskRoleArn, callerArn]) => JSON.stringify([{
+            Rules: [
+                {
+                    ResourceType: "collection",
+                    Resource: [`collection/${collectionName}`],
+                    Permission: [
+                        "aoss:CreateCollectionItems",
+                        "aoss:DeleteCollectionItems",
+                        "aoss:UpdateCollectionItems",
+                        "aoss:DescribeCollectionItems",
+                    ],
                 },
-                "Action": "es:*",
-                "Resource": "arn:aws:es:${aws.getRegionOutput().name}:${aws.getCallerIdentityOutput().accountId}:domain/${appName}-${environment}/*"
-            }
-        ]
-    }`,
-    tags: tags,
+                {
+                    ResourceType: "index",
+                    Resource: [`index/${collectionName}/*`],
+                    Permission: [
+                        "aoss:CreateIndex",
+                        "aoss:DeleteIndex",
+                        "aoss:UpdateIndex",
+                        "aoss:DescribeIndex",
+                        "aoss:ReadDocument",
+                        "aoss:WriteDocument",
+                    ],
+                },
+            ],
+            Principal: [taskRoleArn, callerArn],
+        }]),
+    ),
 });
 
-// Grant ECS task access to OpenSearch
-const openSearchPolicy = new aws.iam.RolePolicy(`${appName}-opensearch-policy`, {
+const openSearchCollection = new aws.opensearch.ServerlessCollection(`${appName}-aoss`, {
+    name: collectionName,
+    type: "VECTORSEARCH",
+    description: "Vector search for OpenTelemetry docs RAG",
+    tags: tags,
+}, {dependsOn: [encryptionPolicy, networkPolicy, dataAccessPolicy]});
+
+// Data-plane IAM permission — the access policy authorises *what* the principal
+// can do; this IAM permission authorises the principal to call the data plane
+// at all. Both are required.
+const openSearchPolicy = new aws.iam.RolePolicy(`${appName}-aoss-policy`, {
     role: ecsTaskRole.id,
-    policy: openSearchDomain.arn.apply(arn => JSON.stringify({
+    policy: openSearchCollection.arn.apply(arn => JSON.stringify({
         Version: "2012-10-17",
         Statement: [{
             Effect: "Allow",
-            Action: [
-                "es:ESHttpGet",
-                "es:ESHttpPut",
-                "es:ESHttpPost",
-                "es:ESHttpDelete",
-            ],
-            Resource: `${arn}/*`,
+            Action: ["aoss:APIAccessAll"],
+            Resource: arn,
         }],
     })),
 });
@@ -434,7 +419,7 @@ const taskDefinition = new aws.ecs.TaskDefinition(`${appName}-task`, {
     taskRoleArn: ecsTaskRole.arn,
     containerDefinitions: pulumi.all([
         logGroup.name,
-        openSearchDomain.endpoint,
+        openSearchCollection.collectionEndpoint,
         secretsManagerSecret.arn,
         image.ref,
         aws.getRegionOutput().name,
@@ -452,9 +437,10 @@ const taskDefinition = new aws.ecs.TaskDefinition(`${appName}-task`, {
             {name: "LOG_LEVEL", value: "debug"}, // Set to "debug" for verbose logging, "info" for production
             {name: "DEFAULT_LLM_PROVIDER", value: "bedrock"},
             {name: "BEDROCK_MODEL", value: "anthropic.claude-3-5-sonnet-20240620-v1:0"},
-            {name: "OPENSEARCH_ENDPOINT", value: `https://${opensearchEndpoint}`},
+            // OpenSearch Serverless: SigV4-only, no username/password.
+            {name: "OPENSEARCH_ENDPOINT", value: opensearchEndpoint},
             {name: "OPENSEARCH_INDEX", value: "otel_knowledge"},
-            {name: "OPENSEARCH_USERNAME", value: "admin"},
+            {name: "OPENSEARCH_SERVICE", value: "aoss"},
             {name: "AWS_REGION", value: awsRegion},
             // Honeycomb Observability Configuration
             {name: "HONEYCOMB_DATASET", value: `${appName}-${environment}`},
@@ -465,10 +451,6 @@ const taskDefinition = new aws.ecs.TaskDefinition(`${appName}-task`, {
             {name: "OTEL_SEMCONV_STABILITY_OPT_IN", value: "gen_ai"},
         ],
         secrets: [
-            {
-                name: "OPENSEARCH_PASSWORD",
-                valueFrom: `${secretArn}:OPENSEARCH_PASSWORD::`,
-            },
             {
                 name: "HONEYCOMB_API_KEY",
                 valueFrom: `${secretArn}:HONEYCOMB_API_KEY::`,
@@ -642,8 +624,9 @@ export const containerImageDigest = image.ref;
 export const vpcId = vpc.vpcId;
 export const albDnsName = alb.dnsName;
 export const albUrl = pulumi.interpolate`http://${alb.dnsName}`; // ALB serves both frontend and backend
-export const openSearchEndpoint = openSearchDomain.endpoint;
-export const openSearchDashboard = openSearchDomain.dashboardEndpoint;
+export const opensearchEndpoint = openSearchCollection.collectionEndpoint;
+export const opensearchDashboard = openSearchCollection.dashboardEndpoint;
+export const opensearchCollectionArn = openSearchCollection.arn;
 export const ecsClusterName = cluster.name;
 export const secretsManagerSecretArn = secretsManagerSecret.arn;
 
