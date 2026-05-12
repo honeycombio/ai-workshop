@@ -7,6 +7,7 @@ An intelligent chatbot application designed to help developers with OpenTelemetr
 - **AWS Bedrock Integration**: Powered by Claude 3.5 Sonnet for intelligent responses
 - **RAG-Powered Responses**: Uses vector search to provide contextually relevant answers from OpenTelemetry documentation
 - **OpenTelemetry Expertise**: Pre-loaded with comprehensive OpenTelemetry documentation
+- **Built-in Load Generator**: A separate Fargate task hits `/api/chat` in bursts (5 rps × 5 min on / 5 min off) using curated OTel prompts so the workshop's Honeycomb queries have meaningful P95/P99 distributions
 - **Modern Web Interface**: Clean, responsive React-based chat interface
 - **Source Attribution**: Shows which documents were used to generate responses with relevance scores
 - **Cloud-Native Architecture**: Amazon OpenSearch Service for vector storage with k-NN search

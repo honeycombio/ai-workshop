@@ -1,0 +1,10 @@
+{
+  "name": "otel-ai-chatbot-loadgen",
+  "version": "1.0.0",
+  "description": "Burst load generator that exercises /api/chat with curated OTel prompts",
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": ">=20"
+  }
+}

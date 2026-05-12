@@ -628,6 +628,135 @@ const metricStream = new aws.cloudwatch.MetricStream(`${appName}-metric-stream`,
 }, {dependsOn: [metricStreamPolicy]});
 
 // =============================================================================
+// Load Generator (Fargate Spot, burst 5 rps × 5 min / idle 5 min)
+// =============================================================================
+//
+// Continuously exercises /api/chat with curated OpenTelemetry prompts so
+// Module 3 (Honeycomb queries) has enough volume for meaningful P95/P99/BubbleUp
+// distributions. Cheap to run because Haiku 4.5 is ~5x cheaper per token than
+// Sonnet 3.5; cycles between bursts and idle to make autoscaling/BubbleUp
+// stories more interesting.
+
+const loadgenEcr = new aws.ecr.Repository(`${appName}-loadgen`, {
+    name: `${appName}-loadgen`,
+    imageTagMutability: "MUTABLE",
+    imageScanningConfiguration: {scanOnPush: true},
+    encryptionConfigurations: [{encryptionType: "AES256"}],
+    forceDelete: true,
+    tags: tags,
+});
+
+new aws.ecr.LifecyclePolicy(`${appName}-loadgen-lifecycle`, {
+    repository: loadgenEcr.name,
+    policy: JSON.stringify({
+        rules: [{
+            rulePriority: 1,
+            description: "Keep last 5 images",
+            selection: {tagStatus: "any", countType: "imageCountMoreThan", countNumber: 5},
+            action: {type: "expire"},
+        }],
+    }),
+});
+
+const loadgenImage = new dockerBuild.Image(`${appName}-loadgen-image`, {
+    tags: [pulumi.interpolate`${loadgenEcr.repositoryUrl}:${environment}`],
+    push: true,
+    context: {location: "../loadgen"},
+    dockerfile: {location: "../loadgen/Dockerfile"},
+    platforms: ["linux/arm64"],
+    registries: [{
+        address: loadgenEcr.repositoryUrl,
+        username: authToken.userName,
+        password: authToken.password,
+    }],
+}, {dependsOn: [loadgenEcr]});
+
+// Loadgen task role — no AWS perms needed beyond the standard execution role.
+const loadgenTaskRole = new aws.iam.Role(`${appName}-loadgen-task-role`, {
+    assumeRolePolicy: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [{
+            Effect: "Allow",
+            Principal: {Service: "ecs-tasks.amazonaws.com"},
+            Action: "sts:AssumeRole",
+        }],
+    }),
+    tags: tags,
+});
+
+const loadgenLogGroup = new aws.cloudwatch.LogGroup(`${appName}-loadgen-logs`, {
+    retentionInDays: 7,
+    tags: tags,
+});
+
+const loadgenTaskDefinition = new aws.ecs.TaskDefinition(`${appName}-loadgen-task`, {
+    family: `${appName}-loadgen`,
+    cpu: "256",     // 0.25 vCPU
+    memory: "512",  // 0.5 GB
+    networkMode: "awsvpc",
+    requiresCompatibilities: ["FARGATE"],
+    runtimePlatform: {cpuArchitecture: "ARM64", operatingSystemFamily: "LINUX"},
+    executionRoleArn: ecsTaskExecutionRole.arn,
+    taskRoleArn: loadgenTaskRole.arn,
+    containerDefinitions: pulumi.all([
+        loadgenLogGroup.name,
+        loadgenImage.ref,
+        alb.dnsName,
+        aws.getRegionOutput().name,
+    ]).apply(([logGroupName, imageDigest, albDns, awsRegion]) => JSON.stringify([{
+        name: "loadgen",
+        image: imageDigest,
+        essential: true,
+        environment: [
+            {name: "TARGET_URL", value: `http://${albDns}`},
+            {name: "BURST_RPS", value: "5"},
+            {name: "BURST_MIN", value: "5"},
+            {name: "IDLE_MIN", value: "5"},
+            {name: "USER_POOL_SIZE", value: "50"},
+        ],
+        logConfiguration: {
+            logDriver: "awslogs",
+            options: {
+                "awslogs-group": logGroupName,
+                "awslogs-region": awsRegion,
+                "awslogs-stream-prefix": "loadgen",
+            },
+        },
+    }])),
+    tags: tags,
+});
+
+// Loadgen security group — outbound to the ALB SG only.
+const loadgenSecurityGroup = new aws.ec2.SecurityGroup(`${appName}-loadgen-sg`, {
+    vpcId: vpc.vpcId,
+    description: "Security group for load generator",
+    egress: [{
+        protocol: "-1",
+        fromPort: 0,
+        toPort: 0,
+        cidrBlocks: ["0.0.0.0/0"],
+        description: "Allow all outbound (ALB + ECR + CloudWatch Logs)",
+    }],
+    tags: {...tags, Name: `${appName}-loadgen-sg`},
+});
+
+new aws.ecs.Service(`${appName}-loadgen-service`, {
+    cluster: cluster.id,
+    taskDefinition: loadgenTaskDefinition.arn,
+    desiredCount: 1,
+    launchType: "FARGATE",
+    networkConfiguration: {
+        subnets: vpc.privateSubnetIds,
+        securityGroups: [loadgenSecurityGroup.id],
+        assignPublicIp: false,
+    },
+    // No load balancer — fire-and-forget worker.
+    deploymentMinimumHealthyPercent: 0,
+    deploymentMaximumPercent: 100,
+    tags: tags,
+}, {dependsOn: [listener]});
+
+// =============================================================================
 // Outputs
 // =============================================================================
 
@@ -635,6 +764,9 @@ const metricStream = new aws.cloudwatch.MetricStream(`${appName}-metric-stream`,
 export const ecrRepositoryUrl = ecrRepository.repositoryUrl;
 export const ecrRepositoryName = ecrRepository.name;
 export const containerImageDigest = image.ref;
+export const loadgenEcrRepositoryUrl = loadgenEcr.repositoryUrl;
+export const loadgenImageDigest = loadgenImage.ref;
+export const loadgenLogGroupName = loadgenLogGroup.name;
 
 
 
