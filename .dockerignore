@@ -1,0 +1,34 @@
+**/node_modules
+npm-debug.log
+.env
+.env.*
+.git
+.gitignore
+README.md
+.vscode
+.idea
+.DS_Store
+*.log
+coverage
+.nyc_output
+dist
+build
+.cache
+
+# Client dev files
+client/node_modules
+client/.env
+client/build
+
+# Data directories
+data/
+chroma_db/
+
+# Pulumi files
+pulumi/node_modules
+pulumi/bin
+
+# Documentation
+docs/
+pulumi/**
+.memory

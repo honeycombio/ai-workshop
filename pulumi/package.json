@@ -1,0 +1,24 @@
+{
+  "name": "otel-ai-chatbot-infra",
+  "version": "1.0.0",
+  "description": "Pulumi infrastructure for OpenTelemetry AI Chatbot with AWS OpenSearch",
+  "main": "index.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf bin node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@opentelemetry/api-logs": "^0.208.0",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.208.0",
+    "@opentelemetry/instrumentation-winston": "^0.53.0",
+    "@opentelemetry/sdk-logs": "^0.208.0",
+    "@pulumi/aws": "^7.11.0",
+    "@pulumi/awsx": "^3.0.1",
+    "@pulumi/docker-build": "^0.0.15",
+    "@pulumi/pulumi": "^3.206.0"
+  }
+}

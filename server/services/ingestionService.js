@@ -1,20 +1,8 @@
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { Document } from '@langchain/core/documents';
-import dotenv from 'dotenv';
+import vectorStore from './vectorStore.js';
+import logger from '../config/logger.js';
 
-// Import our services
-import vectorStore from '../server/services/vectorStore.js';
-import logger from '../server/config/logger.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Load environment variables
-dotenv.config();
-
-class DataIngestionService {
+class IngestionService {
   constructor() {
     this.sampleDocuments = [
       {
@@ -79,17 +67,17 @@ const tracer = trace.getTracer('my-service', '1.0.0');
 
 async function processOrder(order) {
   const span = tracer.startSpan('process-order');
-  
+
   try {
     span.setAttributes({
       'order.id': order.id,
       'order.value': order.value,
       'user.id': order.userId
     });
-    
+
     // Your business logic here
     const result = await performOrderProcessing(order);
-    
+
     span.setStatus({ code: SpanStatusCode.OK });
     return result;
   } catch (error) {
@@ -180,7 +168,7 @@ const sdk = new NodeSDK({
   }),
   instrumentations: [
     getNodeAutoInstrumentations({
-      // We recommend disabling fs automatic instrumentation because 
+      // We recommend disabling fs automatic instrumentation because
       // it can be noisy and expensive during startup
       '@opentelemetry/instrumentation-fs': {
         enabled: false,
@@ -193,14 +181,14 @@ sdk.start();
 \`\`\`
 
 3) Run your application with the instrumentation file:
-Then run your app with node --require ./server/instrumentation.mjs server/index.js (or load it before your app’s entrypoint).
+Then run your app with node --require ./server/instrumentation.mjs server/index.js (or load it before your app's entrypoint).
 
 ## Practical tips
-- Use OTLP exporters. They’re the most interoperable path to send traces to almost any observability backend. 
-- Start with auto-instrumentation, then add custom spans. Let an instrumentation package capture the basics, then layer in high-value custom attributes (prompt IDs, tool names, RAG source counts, reranker scores, token usage). 
-- Keep prompts private when needed. Some instrumentations log prompts/outputs by default; turn that off (or scrub) if you handle sensitive data. (Example note from a Python package, but the privacy trade-off applies broadly.) 
-- Map spans to user requests. If you’re serving HTTP, link request spans to chain/tool spans so you can see end-to-end latency and error propagation (use context propagation from the Node SDK).
-- Look for community examples. There are open repos showing LangChain/LangGraph with OTel shipping to vendors like New Relic. Great for copy-pasteable config. 
+- Use OTLP exporters. They're the most interoperable path to send traces to almost any observability backend.
+- Start with auto-instrumentation, then add custom spans. Let an instrumentation package capture the basics, then layer in high-value custom attributes (prompt IDs, tool names, RAG source counts, reranker scores, token usage).
+- Keep prompts private when needed. Some instrumentations log prompts/outputs by default; turn that off (or scrub) if you handle sensitive data. (Example note from a Python package, but the privacy trade-off applies broadly.)
+- Map spans to user requests. If you're serving HTTP, link request spans to chain/tool spans so you can see end-to-end latency and error propagation (use context propagation from the Node SDK).
+- Look for community examples. There are open repos showing LangChain/LangGraph with OTel shipping to vendors like New Relic. Great for copy-pasteable config.
 
         `,
         source: 'otel-docs-langchain-instrumentation',
@@ -295,40 +283,36 @@ Run your React application as usual:
         title: 'About AI-Workshop project (OpenTelemetry AI Chatbot)',
         content: `
 # Project Overview
-This is an AI-powered chatbot application specifically designed to help developers with OpenTelemetry integration and instrumentation. It's a full-stack JavaScript/Node.js application that combines modern web technologies with AWS AI services.
+This is an AI-powered chatbot application specifically designed to help developers with OpenTelemetry integration and instrumentation. It's a full-stack JavaScript/Node.js application that combines modern web technologies with AI capabilities.
 
 ## Core Features
-### AWS Bedrock Integration
-Uses AWS Bedrock exclusively for LLM capabilities
-Claude 3.5 Sonnet for intelligent responses
-Amazon Titan embeddings for vector search
-IAM role-based authentication (no hardcoded credentials in production)
+### Multi-LLM Support
+Supports multiple AI providers: OpenAI, Anthropic Claude, and AWS Bedrock
+Allows easy switching between providers
+Implements provider-agnostic chat interface
 
 ## RAG (Retrieval Augmented Generation) Capabilities
-Dual vector database support:
-- Local development: ChromaDB
-- Production/AWS: Amazon OpenSearch with k-NN search
-Pre-loaded with OpenTelemetry and Honeycomb Pulumi provider documentation
+Uses ChromaDB or OpenSearch as vector database
+Pre-loaded with OpenTelemetry documentation
 Provides contextually relevant answers based on stored knowledge
 Supports source attribution for responses
 
 ## Modern Architecture
-React-based frontend served directly from backend
-Express.js backend API
-Real-time chat responses
-Vector search integration (ChromaDB or OpenSearch)
+React-based frontend
+Express.js backend
+Real-time streaming responses
+Vector search integration
 Comprehensive API endpoints
 
 ## Technical Architecture
 
 +------------------------+
-|  React Frontend        |
-|  (Built & Served)      |
-|  +------------------+  |
-|  |   Chat Interface |  |
-|  | Bedrock Info Bar |  |
-|  | Message Display  |  |
-|  +--------+---------+  |
+|     React Frontend     |
+|  +------------------+ |
+|  |   Chat Interface | |
+|  |  Provider Select | |
+|  | Message Streaming| |
+|  +--------+--------+ |
 +-----------|-----------+
             |
             v
@@ -336,11 +320,10 @@ Comprehensive API endpoints
 |    Express Backend     |
 | +--------------------+|
 | |    API Layer       ||
-| |  Static Frontend   ||
 | |       |            ||
 | |    Auth/Rate Limit ||
 | |    /          \    ||
-| | Bedrock     Vector ||
+| | LLM         Vector ||
 | |Service      Store  ||
 | |    \          /    ||
 | |     RAG Service    ||
@@ -349,40 +332,37 @@ Comprehensive API endpoints
       |           |
       v           |
 +------------------------+
-|  AWS Services          |
-| +---------+  +-------+|
-| | Bedrock |  |OpenSea||
-| | Claude  |  |rch    ||
-| | 3.5     |  |k-NN   ||
-| | Sonnet  |  |       ||
-| +---------+  +-------+|
-| +---------+           |
-| | Titan   |           |
-| |Embedding|           |
-| +---------+           |
+|  External Services     |
+| +---------+  +------+ |
+| |OpenSearch| |OpenAI| |
+| +---------+  +------+ |
+| +----------+ +------+ |
+| |  Claude  | |AWS   | |
+| |          | |Bedrock| |
+| +----------+ +------+ |
 +------------------------+
 
 Legend:
 → Data flow
 ↔ Bidirectional communication
 
-### Frontend (/client)
+### Frontend
+Frontend (/client)
 Modern React application
 Real-time chat interface
-Bedrock model information display (Claude 3.5 Sonnet + Amazon Titan)
+Provider selection component
 Message streaming support
 API service layer for backend communication
-Built and served as static files from backend in production
 
 #### Key Dependencies of Frontend
 The project is using modern JavaScript (ES6+) with JSX syntax
 Modern ES6+ module imports/exports
+react-router-dom (v6.20.1) for routing
 axios (v1.6.2) for HTTP requests
 react-markdown (v9.0.1) for markdown rendering
 react-syntax-highlighter (v15.5.0) for code highlighting
 react-icons (v4.12.0) for icon components
-styled-components for UI styling
-OpenTelemetry packages for instrumentation support
+OpenTelemetry related packages for web monitoring
 
 ### Backend (/server)
 Express.js server with modular architecture
@@ -390,106 +370,80 @@ Comprehensive middleware (auth, validation, rate limiting)
 Robust error handling and logging
 API routes for chat and admin functions
 Service layer for business logic
-Serves both API and static frontend
 
 #### Key Dependencies of Backend
 Node.js with Express.js framework
 Uses ES Modules (type: "module" in package.json)
 Modern JavaScript (ES6+) with async/await patterns
 Class-based architecture for server setup
-LangChain ecosystem for AI orchestration (@langchain/core, @langchain/aws)
-AWS SDK for Bedrock integration (@aws-sdk/credential-provider-node)
-ChromaDB for local vector storage OR OpenSearch for production
+LangChain ecosystem (@langchain/core, @langchain/openai, etc.)
+OpenSearch for vector storage in AWS deployment
+ChromaDB for local development
 Express middleware (cors, helmet, rate-limit)
 Winston for logging
+Various AI provider SDKs (OpenAI, Anthropic, AWS)
 
 ### Services
-llmProvider.js: Manages AWS Bedrock integration with Claude 3.5 Sonnet
-vectorStore.js: Handles ChromaDB/OpenSearch interactions with Titan embeddings
-ragService.js: Implements RAG functionality with LangChain
+llmProvider.js: Manages multiple AI provider integrations
+vectorStore.js: Handles OpenSearch/ChromaDB interactions with AWS IAM authentication
+ragService.js: Implements RAG functionality
+ingestionService.js: Handles document ingestion
 Various middleware services for security and validation
 
 ### Data Management
-Local: ChromaDB for vector storage
-Production: Amazon OpenSearch with k-NN for vector search
-Includes data ingestion scripts
+Uses OpenSearch (AWS) or ChromaDB (local) for vector storage
+Includes data ingestion scripts and API endpoints
 Supports custom documentation ingestion
-Pre-loaded with OpenTelemetry and Honeycomb Pulumi provider documentation
+Pre-loaded with OpenTelemetry documentation
 
 ### Development Features
+Development Tools
 Hot reloading for development
-Comprehensive logging with Winston
+Comprehensive logging
 Environment-based configuration
 Debug mode support
-Quick-start script for easy setup
 
 ### Security Features
+API key validation
 Rate limiting
 CORS protection
 Helmet security headers
-IAM role-based authentication (production)
-AWS credentials from environment (local development)
+AWS IAM authentication for OpenSearch
 
 ### Deployment Options
-**Local Development:**
-- ChromaDB for vector storage
-- AWS credentials from environment variables
-- npm run scripts for easy management
-
-**AWS Production (Pulumi):**
-- Amazon ECS Fargate for containerized deployment
-- Application Load Balancer for traffic routing
-- Amazon OpenSearch for vector search with k-NN
-- Amazon ECR for Docker image registry
-- AWS Secrets Manager for secure credential storage
-- IAM roles for secure AWS service access
-- Automated Docker builds and deployments
-
-### Infrastructure as Code (Pulumi)
-Complete AWS infrastructure defined in TypeScript
-Automated Docker image building and pushing to ECR
-VPC with public/private subnets across 2 availability zones
-Security groups with least-privilege access
-ECS Fargate cluster with 0.5 vCPU, 1GB memory tasks
-OpenSearch domain with k-NN enabled for vector search
-CloudWatch logs with 7-day retention
-Container serves both frontend and backend API
+Development and production modes
+Environment variable configuration
+Static file serving for production
+Health check endpoints
+AWS ECS Fargate deployment with Pulumi
+OpenSearch in VPC with Fine-Grained Access Control
 
 ### Getting Started
-**Prerequisites:**
-- Node.js 18+
-- npm or yarn
-- AWS credentials (for Bedrock access)
-- ChromaDB (local development) OR OpenSearch (production)
+Prerequisites
+Node.js 18+
+npm or yarn
+API keys for chosen LLM providers
+OpenSearch (AWS) or ChromaDB (local) for vector storage
 
-**Quick Start:**
-\`\`\`bash
-scripts/quick-start.sh  # One-command setup and start
-\`\`\`
+### Setup Process
+For local development: scripts/quick-start.sh
+For AWS deployment: pulumi up in pulumi/ directory
 
 ### API Endpoints
-**Chat API:**
-- POST /api/chat: Send messages to Claude 3.5 Sonnet
-- GET /api/chat/context: Get context from vector store
-- GET /api/chat/providers: Get Bedrock model information
-- POST /api/chat/test-provider: Test Bedrock connection
-- GET /api/health: Health check endpoint
+Chat API
+POST /api/chat: Send messages
+GET /api/chat/context: Get context
+GET /api/chat/providers: List providers
+POST /api/chat/test-provider: Test provider
 
-**Admin API:**
-- POST /api/admin/ingest: Add documents to vector store
-- GET /api/admin/vector-store/info: Get vector store statistics
-- POST /api/admin/search: Search documents
-- DELETE /api/admin/vector-store: Reset vector store
+### Admin API
+POST /api/admin/ingest: Add documents (legacy)
+POST /api/ingest: Trigger data ingestion (new)
+GET /api/admin/vector-store/info: Get store info
+POST /api/admin/search: Search documents
+DELETE /api/admin/vector-store: Reset store
 
-## Production Architecture Benefits
-**Simplified Deployment:** Single container serves both frontend and backend
-**Secure:** IAM roles for AWS service access, no hardcoded credentials
-**Scalable:** ECS Fargate with auto-scaling capabilities
-**Resilient:** Multi-AZ deployment with health checks
-**Observable:** CloudWatch logs and Container Insights
-**Cost-Optimized:** Single NAT gateway, right-sized resources (~$100-105/month)
-
-## This project is particularly valuable for developers working with OpenTelemetry and Honeycomb, as it provides an interactive way to learn about OpenTelemetry instrumentation and Honeycomb infrastructure as code using Pulumi. The AWS Bedrock integration with Claude 3.5 Sonnet and Amazon Titan embeddings ensures high-quality, contextually relevant responses, while the production-ready AWS architecture demonstrates modern cloud-native application patterns.
+## This project is particularly valuable for developers working with OpenTelemetry, as it provides an interactive way to learn about and implement OpenTelemetry instrumentation in their applications. The combination of multiple LLM providers and RAG capabilities ensures high-quality, contextually relevant responses to technical queries about OpenTelemetry implementation.
         `,
         source: 'ai-workshop',
         metadata: {
@@ -591,7 +545,7 @@ scripts/quick-start.sh
 
   async processDocument(doc, index) {
     const documentId = `doc-${Date.now()}-${index}`;
-    
+
     return new Document({
       pageContent: doc.content,
       metadata: {
@@ -599,7 +553,7 @@ scripts/quick-start.sh
         title: doc.title,
         source: doc.source,
         ingestedAt: new Date().toISOString(),
-        document_id: documentId,  // Required by ChromaDB
+        document_id: documentId,
         ...doc.metadata
       }
     });
@@ -616,12 +570,13 @@ scripts/quick-start.sh
 
       // Add documents to vector store
       const totalChunks = await vectorStore.addDocuments(documents);
-      
+
       logger.info(`Successfully ingested ${documents.length} documents (${totalChunks} chunks) into vector store`);
-      
+
       return {
         documentsIngested: documents.length,
-        chunksCreated: totalChunks
+        chunksCreated: totalChunks,
+        success: true
       };
 
     } catch (error) {
@@ -630,65 +585,50 @@ scripts/quick-start.sh
     }
   }
 
-  async saveDocumentsToFile() {
+  async ingestCustomDocument(doc) {
     try {
-      const docsPath = path.join(__dirname, '../data/sample-otel-docs.json');
-      await fs.writeFile(docsPath, JSON.stringify(this.sampleDocuments, null, 2));
-      logger.info(`Sample documents saved to ${docsPath}`);
+      logger.info(`Ingesting custom document: ${doc.title}`);
+
+      const document = await this.processDocument(doc, 0);
+      const chunks = await vectorStore.addDocuments([document]);
+
+      logger.info(`Successfully ingested custom document (${chunks} chunks)`);
+
+      return {
+        documentsIngested: 1,
+        chunksCreated: chunks,
+        success: true
+      };
+
     } catch (error) {
-      logger.error('Error saving documents to file:', error);
+      logger.error('Error ingesting custom document:', error);
       throw error;
     }
   }
 
-  async run() {
+  async resetAndIngest() {
     try {
-      logger.info('🚀 Starting OpenTelemetry documentation ingestion...');
+      logger.info('Resetting vector store and re-ingesting documents...');
 
-      // Ensure data directory exists
-      const dataDir = path.join(__dirname, '../data');
-      await fs.mkdir(dataDir, { recursive: true });
+      // Delete existing collection
+      await vectorStore.deleteCollection().catch(() => {
+        logger.info('No existing collection to delete');
+      });
 
-      // Save sample documents to file for reference
-      await this.saveDocumentsToFile();
-
-      // Initialize vector store
-      await vectorStore.initialize();
-
-      // Delete existing collection if it exists
-      await vectorStore.deleteCollection().catch(() => {});
-
-      // Re-initialize vector store with clean state
+      // Re-initialize vector store
       await vectorStore.initialize();
 
       // Ingest sample documents
       const result = await this.ingestSampleDocuments();
 
-      logger.info('✅ Data ingestion completed successfully!');
-      logger.info(`📊 Summary: ${result.documentsIngested} documents, ${result.chunksCreated} chunks`);
-
+      logger.info('✅ Reset and ingestion completed successfully');
       return result;
 
     } catch (error) {
-      logger.error('❌ Data ingestion failed:', error);
+      logger.error('❌ Reset and ingestion failed:', error);
       throw error;
     }
   }
 }
 
-// Run the ingestion if this script is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const ingestionService = new DataIngestionService();
-  
-  ingestionService.run()
-    .then((result) => {
-      console.log('✅ Ingestion completed:', result);
-      process.exit(0);
-    })
-    .catch((error) => {
-      console.error('❌ Ingestion failed:', error);
-      process.exit(1);
-    });
-}
-
-export default DataIngestionService;
+export default new IngestionService();

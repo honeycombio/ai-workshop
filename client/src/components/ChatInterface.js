@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import { FiSend, FiSettings, FiMessageCircle, FiLoader } from 'react-icons/fi';
 import MessageBubble from './MessageBubble';
-import ProviderSelector from './ProviderSelector';
+import BedrockInfo from './BedrockInfo';
 import { chatAPI } from '../services/api';
 
 const ChatContainer = styled.div`
@@ -199,7 +199,6 @@ const ChatInterface = () => {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const messagesEndRef = useRef(null);
   const textAreaRef = useRef(null);
@@ -228,7 +227,6 @@ const ChatInterface = () => {
 
     try {
       const response = await chatAPI.sendMessage(userMessage.content, {
-        provider: selectedProvider || undefined,
         maxContextDocs: 5,
         includeContext: false
       });
@@ -287,10 +285,7 @@ const ChatInterface = () => {
           <h1>OpenTelemetry AI Assistant</h1>
         </HeaderTitle>
         <HeaderControls>
-          <ProviderSelector 
-            selectedProvider={selectedProvider}
-            onProviderChange={setSelectedProvider}
-          />
+          <BedrockInfo />
           <SettingsButton onClick={() => setShowSettings(!showSettings)}>
             <FiSettings size={20} />
           </SettingsButton>

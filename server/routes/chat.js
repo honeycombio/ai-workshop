@@ -7,21 +7,21 @@ import { config } from '../config/index.js';
 
 const router = express.Router();
 
-// POST /api/chat - Main chat endpoint
+// POST /api/chat - Main chat endpoint (Bedrock only)
 router.post('/', validateChatMessage, handleValidationErrors, async (req, res) => {
   try {
-    const { 
-      message, 
-      provider = null, 
-      maxContextDocs = 5, 
-      includeContext = false 
+    const {
+      message,
+      provider = null, // Optional - always uses Bedrock (kept for backward compatibility)
+      maxContextDocs = 5,
+      includeContext = false
     } = req.body;
 
-    logger.info(`Chat request received: "${message}" with provider: ${provider || 'default'}`);
+    logger.info(`Chat request received: "${message}" using Bedrock`);
 
-    // Generate response using RAG service
+    // Generate response using RAG service with Bedrock
     const result = await ragService.askQuestion(message, {
-      provider,
+      provider: 'bedrock', // Always use Bedrock
       maxContextDocs,
       includeContext
     });
@@ -72,23 +72,35 @@ router.get('/context', async (req, res) => {
   }
 });
 
-// GET /api/chat/providers - Get available LLM providers
+// GET /api/chat/providers - Get available LLM providers and model info
 router.get('/providers', (req, res) => {
   try {
     const providers = llmProvider.getAvailableProviders();
     const default_provider = config.llm.defaultProvider
-    
+
     res.json({
       success: true,
       data: {
         providers,
-        default: default_provider || null
+        default: default_provider || null,
+        models: {
+          llm: {
+            name: 'Claude Sonnet 4.5',
+            id: config.llm.bedrock.model,
+            provider: 'AWS Bedrock'
+          },
+          embeddings: {
+            name: 'Amazon Titan Text Embeddings',
+            id: 'amazon.titan-embed-text-v1',
+            provider: 'AWS Bedrock'
+          }
+        }
       }
     });
 
   } catch (error) {
     logger.error('Error getting providers:', error);
-    
+
     res.status(500).json({
       success: false,
       error: 'Failed to get providers',

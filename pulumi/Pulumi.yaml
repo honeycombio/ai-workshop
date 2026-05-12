@@ -1,0 +1,4 @@
+name: otel-ai-chatbot-infra
+description: AWS infrastructure for OpenTelemetry AI Chatbot with OpenSearch
+runtime: nodejs
+main: index.ts

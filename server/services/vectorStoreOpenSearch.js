@@ -1,6 +1,7 @@
 import { Client } from '@opensearch-project/opensearch';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import { AwsSigv4Signer } from '@opensearch-project/opensearch/aws';
+import { OpenAIEmbeddings } from '@langchain/openai';
 import { BedrockEmbeddings } from '@langchain/aws';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { Document } from '@langchain/core/documents';
@@ -20,21 +21,17 @@ class OpenSearchVectorStore {
     try {
       // Get OpenSearch configuration from environment
       const opensearchEndpoint = process.env.OPENSEARCH_ENDPOINT || 'https://localhost:9200';
-      const opensearchUsername = process.env.OPENSEARCH_USERNAME || 'admin';
-      const opensearchPassword = process.env.OPENSEARCH_PASSWORD;
       this.indexName = process.env.OPENSEARCH_INDEX || config.vectorDb.collectionName || 'otel_knowledge';
 
-      // Debug logging for credentials
-      logger.debug('OpenSearch configuration:', {
-        endpoint: opensearchEndpoint,
-        indexName: this.indexName,
-        authMethod: 'AWS SigV4 (IAM)',
-      });
+      // Extract region from OpenSearch endpoint (e.g., vpc-xxx.us-east-1.es.amazonaws.com)
+      const region = opensearchEndpoint.match(/\.([a-z]+-[a-z]+-\d+)\.es\.amazonaws\.com/)?.[1] || process.env.AWS_REGION || 'us-east-1';
 
-      // Initialize OpenSearch client with AWS SigV4 signing for VPC + Fine-Grained Access Control
+      logger.info(`Initializing OpenSearch client with AWS SigV4 auth for region: ${region}`);
+
+      // Initialize OpenSearch client with AWS SigV4 signing
       this.client = new Client({
         ...AwsSigv4Signer({
-          region: process.env.AWS_REGION || 'us-east-1',
+          region: region,
           service: 'es',
           getCredentials: () => {
             const credentialsProvider = defaultProvider();
@@ -42,24 +39,30 @@ class OpenSearchVectorStore {
           },
         }),
         node: opensearchEndpoint,
-        ssl: {
-          rejectUnauthorized: false, // Set to true in production with valid certificates
-        },
       });
 
       // Test connection
       await this.client.info();
-      logger.info('Connected to OpenSearch');
+      logger.info('Connected to OpenSearch with AWS SigV4 authentication');
 
-      // Initialize embeddings - always use Bedrock with Amazon Titan
-      this.embeddings = new BedrockEmbeddings({
-        model: 'amazon.titan-embed-text-v1',
-        region: process.env.AWS_REGION || 'us-east-1',
-        // Credentials handled automatically:
-        // - ECS: Uses IAM task role
-        // - Local: Uses AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from env
-      });
-      logger.info('Using Bedrock embeddings with Amazon Titan');
+      // Initialize embeddings
+      if (config.llm.defaultProvider === 'openai' || config.llm.defaultProvider === 'anthropic') {
+        this.embeddings = new OpenAIEmbeddings({
+          openAIApiKey: config.llm.openai.apiKey,
+          modelName: 'text-embedding-ada-002',
+        });
+      } else if (config.llm.defaultProvider === 'bedrock') {
+        this.embeddings = new BedrockEmbeddings({
+          model: 'amazon.titan-embed-text-v1',
+          region: config.llm.bedrock.region,
+          credentials: {
+            accessKeyId: config.llm.bedrock.accessKeyId,
+            secretAccessKey: config.llm.bedrock.secretAccessKey,
+          },
+        });
+      } else {
+        throw new Error(`Unsupported LLM provider: ${config.llm.defaultProvider}`);
+      }
 
       // Initialize text splitter
       this.textSplitter = new RecursiveCharacterTextSplitter({
@@ -99,11 +102,11 @@ class OpenSearchVectorStore {
                 content: { type: 'text' },
                 embedding: {
                   type: 'knn_vector',
-                  dimension: 1536, // Amazon Titan Text Embeddings dimension
+                  dimension: 1536, // OpenAI text-embedding-ada-002 dimension
                   method: {
                     name: 'hnsw',
                     space_type: 'l2',
-                    engine: 'faiss', // Changed from nmslib (deprecated in OpenSearch 3.x) to faiss
+                    engine: 'nmslib',
                     parameters: {
                       ef_construction: 128,
                       m: 24,

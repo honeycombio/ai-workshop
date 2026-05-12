@@ -6,29 +6,20 @@ export const config = {
   // Server Configuration
   port: process.env.PORT || 3001,
   nodeEnv: process.env.NODE_ENV || 'development',
+  logLevel: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
   
-  // LLM Configuration
+  // LLM Configuration - Bedrock only
   llm: {
-    defaultProvider: process.env.DEFAULT_LLM_PROVIDER || 'openai',
+    defaultProvider: 'bedrock', // Always use Bedrock
     maxContextLength: parseInt(process.env.MAX_CONTEXT_LENGTH) || 4000,
     temperature: parseFloat(process.env.TEMPERATURE) || 0.7,
     maxTokens: parseInt(process.env.MAX_TOKENS) || 1000,
-    
-    openai: {
-      apiKey: process.env.OPENAI_API_KEY,
-      model: process.env.OPENAI_MODEL || 'gpt-4-turbo-preview'
-    },
-    
-    anthropic: {
-      apiKey: process.env.ANTHROPIC_API_KEY,
-      model: process.env.ANTHROPIC_MODEL || 'claude-3-sonnet-20240229'
-    },
-    
+
     bedrock: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID, // Optional - only for local dev
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY, // Optional - only for local dev
       region: process.env.AWS_REGION || 'us-east-1',
-      model: process.env.BEDROCK_MODEL || 'anthropic.claude-3-sonnet-20240229-v1:0'
+      model: process.env.BEDROCK_MODEL || 'anthropic.claude-3-5-sonnet-20240620-v1:0' // Claude 3.5 Sonnet v1
     }
   },
   
@@ -47,24 +38,22 @@ export const config = {
 
 // Validation
 export function validateConfig() {
-  const requiredFields = [];
-  
-  switch (config.llm.defaultProvider) {
-    case 'openai':
-      if (!config.llm.openai.apiKey) requiredFields.push('OPENAI_API_KEY');
-      break;
-    case 'anthropic':
-      if (!config.llm.anthropic.apiKey) requiredFields.push('ANTHROPIC_API_KEY');
-      break;
-    case 'bedrock':
-      if (!config.llm.bedrock.accessKeyId) requiredFields.push('AWS_ACCESS_KEY_ID');
-      if (!config.llm.bedrock.secretAccessKey) requiredFields.push('AWS_SECRET_ACCESS_KEY');
-      break;
-    default:
-      throw new Error(`Unsupported LLM provider: ${config.llm.defaultProvider}`);
-  }
-  
-  if (requiredFields.length > 0) {
-    throw new Error(`Missing required environment variables: ${requiredFields.join(', ')}`);
+  // For Bedrock, credentials are optional
+  // - In local development: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required
+  // - In ECS: IAM task role provides credentials automatically
+
+  // Only validate if we're NOT in an ECS environment
+  const isECS = process.env.ECS_CONTAINER_METADATA_URI || process.env.AWS_EXECUTION_ENV;
+
+  if (!isECS) {
+    const requiredFields = [];
+    if (!config.llm.bedrock.accessKeyId) requiredFields.push('AWS_ACCESS_KEY_ID');
+    if (!config.llm.bedrock.secretAccessKey) requiredFields.push('AWS_SECRET_ACCESS_KEY');
+
+    if (requiredFields.length > 0) {
+      throw new Error(`Missing required environment variables for local development: ${requiredFields.join(', ')}`);
+    }
+  } else {
+    console.log('Running in ECS - using IAM task role for AWS credentials');
   }
 }

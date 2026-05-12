@@ -3,6 +3,8 @@ import { validateDocumentIngestion, handleValidationErrors } from '../middleware
 import vectorStore from '../services/vectorStore.js';
 import { Document } from '@langchain/core/documents';
 import logger from '../config/logger.js';
+import DataIngestionService from '../../scripts/ingest-data.js';
+import HoneycombPulumiIngestionService from '../../scripts/ingest-honeycomb-pulumi.js';
 
 const router = express.Router();
 
@@ -142,10 +144,86 @@ router.post('/search', async (req, res) => {
 
   } catch (error) {
     logger.error('Error searching vector store:', error);
-    
+
     res.status(500).json({
       success: false,
       error: 'Failed to search vector store',
+      message: error.message
+    });
+  }
+});
+
+// POST /api/admin/ingest-all - Ingest all documentation (OpenTelemetry + Honeycomb Pulumi)
+router.post('/ingest-all', async (req, res) => {
+  try {
+    logger.info('Starting full documentation ingestion...');
+
+    // Initialize vector store
+    await vectorStore.initialize();
+
+    // Delete existing collection if requested
+    const { reset = true } = req.body;
+    if (reset) {
+      logger.info('Resetting vector store...');
+      await vectorStore.deleteCollection().catch(() => {});
+      await vectorStore.initialize();
+    }
+
+    const results = {
+      otelDocs: null,
+      honeycombPulumiDocs: null,
+      totalDocuments: 0,
+      totalChunks: 0,
+    };
+
+    // 1. Ingest OpenTelemetry documentation
+    try {
+      logger.info('Ingesting OpenTelemetry documentation...');
+      const otelService = new DataIngestionService();
+      results.otelDocs = await otelService.ingestSampleDocuments();
+      logger.info(`OpenTelemetry docs ingested: ${results.otelDocs.documentsIngested} documents, ${results.otelDocs.chunksCreated} chunks`);
+    } catch (error) {
+      logger.error('Error ingesting OpenTelemetry docs:', error);
+      results.otelDocs = { error: error.message };
+    }
+
+    // 2. Ingest Honeycomb Pulumi provider documentation
+    try {
+      logger.info('Ingesting Honeycomb Pulumi provider documentation...');
+      const honeycombService = new HoneycombPulumiIngestionService();
+      results.honeycombPulumiDocs = await honeycombService.ingestDocuments();
+      logger.info(`Honeycomb Pulumi docs ingested: ${results.honeycombPulumiDocs.documentsIngested} documents, ${results.honeycombPulumiDocs.chunksCreated} chunks`);
+    } catch (error) {
+      logger.error('Error ingesting Honeycomb Pulumi docs:', error);
+      results.honeycombPulumiDocs = { error: error.message };
+    }
+
+    // Calculate totals
+    if (results.otelDocs && !results.otelDocs.error) {
+      results.totalDocuments += results.otelDocs.documentsIngested;
+      results.totalChunks += results.otelDocs.chunksCreated;
+    }
+    if (results.honeycombPulumiDocs && !results.honeycombPulumiDocs.error) {
+      results.totalDocuments += results.honeycombPulumiDocs.documentsIngested;
+      results.totalChunks += results.honeycombPulumiDocs.chunksCreated;
+    }
+
+    logger.info(`✅ Full ingestion completed: ${results.totalDocuments} total documents, ${results.totalChunks} total chunks`);
+
+    res.json({
+      success: true,
+      data: {
+        message: 'Documentation ingestion completed',
+        ...results
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error during full ingestion:', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Failed to ingest documentation',
       message: error.message
     });
   }

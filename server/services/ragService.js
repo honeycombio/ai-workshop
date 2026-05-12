@@ -1,9 +1,13 @@
 import { PromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
+import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import llmProvider from './llmProvider.js';
 import vectorStore from './vectorStore.js';
 import logger from '../config/logger.js';
+import { traceLLMCall, addGenAIContent } from '../utils/llmTracing.js';
+
+const tracer = trace.getTracer('rag-service', '1.0.0');
 
 class RAGService {
   constructor() {
@@ -86,82 +90,191 @@ Provide a helpful, accurate response based on the context above. think deeply an
   }
 
   async generateResponse(question, providerName = null, maxContextDocs = 5) {
-    try {
-      logger.info(`Generating response for question: "${question}"`);
+    return tracer.startActiveSpan('rag.generate_response', async (span) => {
+      try {
+        logger.info(`Generating response for question: "${question}"`);
 
-      // Create a runnable for vector search
-      const vectorSearchRunnable = RunnableSequence.from([
-        (input) => input.question, // Extract question from input object
-        async (question) => {
-          const results = await vectorStore.similaritySearchWithScore(question, maxContextDocs);
-          return { 
-            question,
-            relevantDocs: results
-          };
-        },
-        (input) => ({
-          context: this.formatContext(input.relevantDocs),
-          question: input.question,
-          relevantDocs: input.relevantDocs // Pass through for metadata
-        })
-      ]);
+        // Add question metadata to span
+        span.setAttributes({
+          'rag.question': question,
+          'rag.question_length': question.length,
+          'rag.provider': providerName || 'default',
+          'rag.max_context_docs': maxContextDocs
+        });
 
-      // Get LLM provider
-      const llm = llmProvider.getProvider(providerName);
+        // Vector search with tracing
+        const relevantDocs = await tracer.startActiveSpan('db.vector.search', async (vectorSpan) => {
+          const vectorStartTime = Date.now();
 
-      // Create the complete chain
-      const chain = RunnableSequence.from([
-        vectorSearchRunnable,
-        {
-          context: (input) => input.context,
-          question: (input) => input.question,
-          relevantDocs: (input) => input.relevantDocs
-        },
-        {
-          context: (input) => input.context,
-          question: (input) => input.question,
-          llmResponse: async (input) => {
+          try {
+            const results = await vectorStore.similaritySearchWithScore(question, maxContextDocs);
+            const duration = Date.now() - vectorStartTime;
+
+            // Calculate relevance scores
+            const scores = results.map(([, score]) => score);
+            const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+            const maxScore = Math.max(...scores);
+            const minScore = Math.min(...scores);
+
+            vectorSpan.setAttributes({
+              // Database semantic conventions
+              'db.system': 'opensearch',
+              'db.operation': 'vector_search',
+              'db.namespace': process.env.OPENSEARCH_INDEX || 'otel_knowledge',
+
+              // RAG-specific attributes
+              'rag.query': question,
+              'rag.query_length': question.length,
+              'rag.documents_retrieved': results.length,
+              'rag.retrieval_latency_ms': duration,
+              'rag.k': maxContextDocs,  // Top-K requested
+
+              // Similarity/relevance metrics
+              'rag.similarity.max': maxScore,
+              'rag.similarity.min': minScore,
+              'rag.similarity.avg': avgScore,
+              'rag.similarity.threshold': minScore  // Documents below this weren't returned
+            });
+
+            vectorSpan.setStatus({ code: SpanStatusCode.OK });
+            vectorSpan.end();
+            return results;
+          } catch (error) {
+            vectorSpan.setAttribute('error.type', error.name || 'VectorSearchError');
+            vectorSpan.setStatus({
+              code: SpanStatusCode.ERROR,
+              message: error.message
+            });
+            vectorSpan.recordException(error);
+            vectorSpan.end();
+            throw error;
+          }
+        });
+
+        // Format context with tracing
+        const formattedContext = await tracer.startActiveSpan('rag.format_context', async (formatSpan) => {
+          try {
+            const context = this.formatContext(relevantDocs);
+
+            formatSpan.setAttributes({
+              'rag.context.formatted_length': context.length,
+              'rag.context.documents_used': relevantDocs.length,
+              'rag.context.sources': this.extractSources(relevantDocs).join(', ')
+            });
+
+            formatSpan.setStatus({ code: SpanStatusCode.OK });
+            formatSpan.end();
+            return context;
+          } catch (error) {
+            formatSpan.setStatus({
+              code: SpanStatusCode.ERROR,
+              message: error.message
+            });
+            formatSpan.recordException(error);
+            formatSpan.end();
+            throw error;
+          }
+        });
+
+        // Get LLM provider
+        const llm = llmProvider.getProvider(providerName);
+        const actualProvider = providerName || llmProvider.getAvailableProviders()[0];
+
+        // LLM generation with tracing
+        const llmResponse = await tracer.startActiveSpan('rag.llm_generation', async (llmSpan) => {
+          const llmStartTime = Date.now();
+
+          try {
+            llmSpan.setAttributes({
+              'rag.llm.provider': actualProvider,
+              'rag.llm.context_length': formattedContext.length
+            });
+
             const response = await this.promptTemplate
               .pipe(llm)
               .pipe(new StringOutputParser())
               .invoke({
-                context: input.context,
-                question: input.question
+                context: formattedContext,
+                question: question
               });
+
+            const duration = Date.now() - llmStartTime;
+
+            llmSpan.setAttributes({
+              'rag.llm.duration_ms': duration,
+              'rag.llm.response_length': response.length,
+              'rag.llm.success': true
+            });
+
+            llmSpan.setStatus({ code: SpanStatusCode.OK });
+            llmSpan.end();
             return response;
+          } catch (error) {
+            const duration = Date.now() - llmStartTime;
+
+            llmSpan.setAttributes({
+              'rag.llm.duration_ms': duration,
+              'rag.llm.success': false,
+              'rag.llm.error': error.message
+            });
+
+            llmSpan.setStatus({
+              code: SpanStatusCode.ERROR,
+              message: error.message
+            });
+            llmSpan.recordException(error);
+            llmSpan.end();
+            throw error;
+          }
+        });
+
+        // Format and return the response
+        logger.info('Response generated successfully');
+
+        span.setAttributes({
+          'rag.documents_used': relevantDocs.length,
+          'rag.response_length': llmResponse.length,
+          'rag.success': true
+        });
+
+        span.setStatus({ code: SpanStatusCode.OK });
+        span.end();
+
+        return {
+          response: llmResponse,
+          context: {
+            documentsUsed: relevantDocs.length,
+            sources: this.extractSources(relevantDocs),
+            relevanceScores: relevantDocs.map(([doc, score]) => ({
+              source: doc.metadata?.source || 'unknown',
+              score: score
+            }))
           },
-          relevantDocs: (input) => input.relevantDocs
-        }
-      ]);
+          metadata: {
+            question: question,
+            provider: actualProvider,
+            timestamp: new Date().toISOString()
+          }
+        };
 
-      // Run the chain
-      const result = await chain.invoke({
-        question: question
-      });
+      } catch (error) {
+        logger.error('Error generating RAG response:', error);
 
-      // Format and return the response
-      logger.info('Response generated successfully');
-      return {
-        response: result.llmResponse,
-        context: {
-          documentsUsed: result.relevantDocs.length,
-          sources: this.extractSources(result.relevantDocs),
-          relevanceScores: result.relevantDocs.map(([doc, score]) => ({
-            source: doc.metadata?.source || 'unknown',
-            score: score
-          }))
-        },
-        metadata: {
-          question: question,
-          provider: providerName || llmProvider.getAvailableProviders()[0],
-          timestamp: new Date().toISOString()
-        }
-      };
+        span.setAttributes({
+          'rag.success': false,
+          'rag.error': error.message
+        });
 
-    } catch (error) {
-      logger.error('Error generating RAG response:', error);
-      throw error;
-    }
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: error.message
+        });
+        span.recordException(error);
+        span.end();
+
+        throw error;
+      }
+    });
   }
 
   formatContext(relevantDocs) {

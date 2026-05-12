@@ -1,3 +1,6 @@
+// IMPORTANT: Import instrumentation FIRST before any other imports
+import './instrumentation.js';
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -12,6 +15,7 @@ import { rateLimiter, validateApiKey, requestLogger } from './middleware/auth.js
 // Import routes
 import chatRouter from './routes/chat.js';
 import adminRouter from './routes/admin.js';
+import ingestRouter from './routes/ingest.js';
 
 // Import services to initialize them
 import llmProvider from './services/llmProvider.js';
@@ -35,20 +39,32 @@ class Server {
 
   async initialize() {
     try {
+      logger.info('Starting server initialization...');
+
       // Validate configuration
+      logger.debug('Validating configuration...');
       validateConfig();
-      logger.info('Configuration validated successfully');
+      logger.info('Configuration validated successfully', {
+        nodeEnv: config.nodeEnv,
+        port: config.port,
+        logLevel: config.logLevel,
+        defaultProvider: config.llm.defaultProvider
+      });
 
       // Initialize services
+      logger.debug('Initializing services...');
       await this.initializeServices();
 
       // Setup middleware
+      logger.debug('Setting up middleware...');
       this.setupMiddleware();
 
       // Setup routes
+      logger.debug('Setting up routes...');
       this.setupRoutes();
 
       // Setup error handling
+      logger.debug('Setting up error handling...');
       this.setupErrorHandling();
 
       logger.info('Server initialized successfully');
@@ -60,12 +76,20 @@ class Server {
 
   async initializeServices() {
     try {
+      logger.debug('Initializing LLM provider...');
       // LLM Provider is already initialized in its constructor
-      logger.info('LLM Provider service ready');
+      const availableProviders = llmProvider.getAvailableProviders();
+      logger.info('LLM Provider service ready', {
+        availableProviders,
+        defaultProvider: config.llm.defaultProvider
+      });
 
       // Initialize vector store
+      logger.debug('Initializing vector store...');
       await vectorStore.initialize();
-      logger.info('Vector store service initialized');
+      logger.info('Vector store service initialized', {
+        collectionName: config.vectorDb.collectionName
+      });
 
     } catch (error) {
       logger.error('Error initializing services:', error);
@@ -75,11 +99,19 @@ class Server {
 
   setupMiddleware() {
     // Security middleware
-    this.app.use(helmet());
+    // Disable upgrade-insecure-requests when no HTTPS listener is configured
+    this.app.use(helmet({
+      contentSecurityPolicy: {
+        directives: {
+          ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+          "upgrade-insecure-requests": null, // Disable HTTPS upgrade when using HTTP-only ALB
+        },
+      },
+    }));
 
     // CORS configuration
     this.app.use(cors({
-      origin: 'https://${{this.host}}',
+      origin: `https://${this.host}`,
       credentials: true
     }));
 
@@ -106,6 +138,7 @@ class Server {
     // API routes
     this.app.use('/api/chat', chatRouter);
     this.app.use('/api/admin', adminRouter);
+    this.app.use('/api/ingest', ingestRouter);
 
     // Health check endpoint
     this.app.get('/api/health', (req, res) => {

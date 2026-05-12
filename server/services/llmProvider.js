@@ -1,5 +1,3 @@
-import { ChatOpenAI } from '@langchain/openai';
-import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatBedrockConverse } from '@langchain/aws';
 import { config } from '../config/index.js';
 import logger from '../config/logger.js';
@@ -12,49 +10,20 @@ class LLMProviderService {
 
   initializeProviders() {
     try {
-      // Initialize OpenAI
-      if (config.llm.openai.apiKey) {
-        this.providers.set('openai', new ChatOpenAI({
-          openAIApiKey: config.llm.openai.apiKey,
-          modelName: config.llm.openai.model,
-          temperature: config.llm.temperature,
-          maxTokens: config.llm.maxTokens
-        }));
-        logger.info('OpenAI provider initialized');
-      }
-
-      // Initialize Anthropic
-      if (config.llm.anthropic.apiKey) {
-        this.providers.set('anthropic', new ChatAnthropic({
-          anthropicApiKey: config.llm.anthropic.apiKey,
-          modelName: config.llm.anthropic.model,
-          temperature: config.llm.temperature,
-          maxTokens: config.llm.maxTokens
-        }));
-        logger.info('Anthropic provider initialized');
-      }
-
-      // Initialize Bedrock
-      if (config.llm.bedrock.accessKeyId && config.llm.bedrock.secretAccessKey) {
-        this.providers.set('bedrock', new ChatBedrockConverse({
-          model: config.llm.bedrock.model,
-          temperature: config.llm.temperature,
-          maxTokens: config.llm.maxTokens,
-          region: config.llm.bedrock.region,
-          credentials: {
-            accessKeyId: config.llm.bedrock.accessKeyId,
-            secretAccessKey: config.llm.bedrock.secretAccessKey
-          }
-        }));
-        logger.info('Bedrock provider initialized');
-      }
-
-      if (this.providers.size === 0) {
-        throw new Error('No LLM providers could be initialized. Check your configuration.');
-      }
+      // Initialize Bedrock - always use Claude Sonnet 4.5
+      this.providers.set('bedrock', new ChatBedrockConverse({
+        model: config.llm.bedrock.model,
+        temperature: config.llm.temperature,
+        maxTokens: config.llm.maxTokens,
+        region: config.llm.bedrock.region,
+        // Credentials handled automatically:
+        // - ECS: Uses IAM task role
+        // - Local: Uses AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from env
+      }));
+      logger.info(`Bedrock provider initialized with model: ${config.llm.bedrock.model}`);
 
     } catch (error) {
-      logger.error('Error initializing LLM providers:', error);
+      logger.error('Error initializing Bedrock provider:', error);
       throw error;
     }
   }
