@@ -300,7 +300,7 @@ This is an AI-powered chatbot application specifically designed to help develope
 ## Core Features
 ### AWS Bedrock Integration
 Uses AWS Bedrock exclusively for LLM capabilities
-Claude 3.5 Sonnet for intelligent responses
+Claude Haiku 4.5 for fast, intelligent responses
 Amazon Titan embeddings for vector search
 IAM role-based authentication (no hardcoded credentials in production)
 
@@ -369,7 +369,7 @@ Legend:
 ### Frontend (/client)
 Modern React application
 Real-time chat interface
-Bedrock model information display (Claude 3.5 Sonnet + Amazon Titan)
+Bedrock model information display (Claude Haiku 4.5 + Amazon Titan)
 Message streaming support
 API service layer for backend communication
 Built and served as static files from backend in production
@@ -404,7 +404,7 @@ Express middleware (cors, helmet, rate-limit)
 Winston for logging
 
 ### Services
-llmProvider.js: Manages AWS Bedrock integration with Claude 3.5 Sonnet
+llmProvider.js: Manages AWS Bedrock integration with Claude Haiku 4.5
 vectorStore.js: Handles ChromaDB/OpenSearch interactions with Titan embeddings
 ragService.js: Implements RAG functionality with LangChain
 Various middleware services for security and validation
@@ -469,7 +469,7 @@ scripts/quick-start.sh  # One-command setup and start
 
 ### API Endpoints
 **Chat API:**
-- POST /api/chat: Send messages to Claude 3.5 Sonnet
+- POST /api/chat: Send messages to Claude Haiku 4.5
 - GET /api/chat/context: Get context from vector store
 - GET /api/chat/providers: Get Bedrock model information
 - POST /api/chat/test-provider: Test Bedrock connection
@@ -489,7 +489,7 @@ scripts/quick-start.sh  # One-command setup and start
 **Observable:** CloudWatch logs and Container Insights
 **Cost-Optimized:** Single NAT gateway, right-sized resources (~$100-105/month)
 
-## This project is particularly valuable for developers working with OpenTelemetry and Honeycomb, as it provides an interactive way to learn about OpenTelemetry instrumentation and Honeycomb infrastructure as code using Pulumi. The AWS Bedrock integration with Claude 3.5 Sonnet and Amazon Titan embeddings ensures high-quality, contextually relevant responses, while the production-ready AWS architecture demonstrates modern cloud-native application patterns.
+## This project is particularly valuable for developers working with OpenTelemetry and Honeycomb, as it provides an interactive way to learn about OpenTelemetry instrumentation and Honeycomb infrastructure as code using Pulumi. The AWS Bedrock integration with Claude Haiku 4.5 and Amazon Titan embeddings ensures fast, contextually relevant responses, while the production-ready AWS architecture demonstrates modern cloud-native application patterns.
         `,
         source: 'ai-workshop',
         metadata: {

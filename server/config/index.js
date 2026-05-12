@@ -19,7 +19,7 @@ export const config = {
       accessKeyId: process.env.AWS_ACCESS_KEY_ID, // Optional - only for local dev
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY, // Optional - only for local dev
       region: process.env.AWS_REGION || 'us-east-1',
-      model: process.env.BEDROCK_MODEL || 'anthropic.claude-3-5-sonnet-20240620-v1:0' // Claude 3.5 Sonnet v1
+      model: process.env.BEDROCK_MODEL || 'us.anthropic.claude-haiku-4-5-20251001-v1:0' // Claude Haiku 4.5 (US geo inference profile)
     }
   },
   
