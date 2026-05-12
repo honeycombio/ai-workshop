@@ -1,10 +1,10 @@
 # OpenTelemetry AI Chatbot 🤖
 
-An intelligent chatbot application designed to help developers with OpenTelemetry integration and instrumentation. Built with Node.js, React, and powered by AWS Bedrock (Claude 3.5 Sonnet) with RAG (Retrieval Augmented Generation) capabilities.
+An intelligent chatbot application designed to help developers with OpenTelemetry integration and instrumentation. Built with Node.js, React, and powered by AWS Bedrock (Claude Haiku 4.5) with RAG (Retrieval Augmented Generation) capabilities.
 
 ## ✨ Features
 
-- **AWS Bedrock Integration**: Powered by Claude 3.5 Sonnet for intelligent responses
+- **AWS Bedrock Integration**: Powered by Claude Haiku 4.5 for fast, intelligent responses
 - **RAG-Powered Responses**: Uses vector search to provide contextually relevant answers from OpenTelemetry documentation
 - **OpenTelemetry Expertise**: Pre-loaded with comprehensive OpenTelemetry documentation
 - **Modern Web Interface**: Clean, responsive React-based chat interface
@@ -31,8 +31,8 @@ An intelligent chatbot application designed to help developers with OpenTelemetr
                            │                                     │
                     ┌──────▼──────┐                    ┌────────▼────────┐
                     │  AWS Bedrock│                    │  OpenSearch     │
-                    │  Claude 3.5 │                    │  Serverless     │
-                    │   Sonnet    │                    │  (VECTORSEARCH) │
+                    │   Claude    │                    │  Serverless     │
+                    │  Haiku 4.5  │                    │  (VECTORSEARCH) │
                     │  - IAM Role │                    │  - SigV4 auth   │
                     │    Auth     │                    │  - 1536 dims    │
                     └─────────────┘                    │  - HNSW / faiss │
@@ -185,7 +185,7 @@ The ESC environment name is specified in your `Pulumi.<stack>.yaml` file.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `AWS_REGION` | AWS region for Bedrock | us-east-1 |
-| `BEDROCK_MODEL` | Bedrock model ID | anthropic.claude-3-5-sonnet-20240620-v1:0 |
+| `BEDROCK_MODEL` | Bedrock model ID | us.anthropic.claude-haiku-4-5-20251001-v1:0 |
 
 In production, AWS credentials are provided automatically via IAM role (no keys needed).
 
@@ -280,7 +280,7 @@ The RAG service uses a three-stage pipeline:
 3. **LLM Generation**: Send prompt + context to Bedrock → parse response
 
 #### AWS Bedrock Integration
-- Fixed to use Claude 3.5 Sonnet exclusively (anthropic.claude-3-5-sonnet-20240620-v1:0)
+- Fixed to use Claude Haiku 4.5 exclusively via US geo inference profile (us.anthropic.claude-haiku-4-5-20251001-v1:0)
 - Production: IAM role credentials (automatic, no keys needed)
 - Uses Bedrock embeddings for vector search (1536 dimensions)
 
@@ -461,7 +461,7 @@ curl http://<alb-url>/api/admin/vector-store/info
 
 # Test Bedrock access
 pulumi env run <esc-environment> -i -- aws bedrock-runtime invoke-model \
-  --model-id anthropic.claude-3-5-sonnet-20240620-v1:0 \
+  --model-id us.anthropic.claude-haiku-4-5-20251001-v1:0 \
   --body '{"anthropic_version":"bedrock-2023-05-31","messages":[{"role":"user","content":"Hello"}],"max_tokens":100}' \
   output.json
 
@@ -500,7 +500,7 @@ MIT License - see LICENSE file for details
 ## 🙏 Acknowledgments
 
 - **OpenTelemetry Community** for comprehensive documentation and best practices
-- **AWS Bedrock** for providing Claude 3.5 Sonnet API access
+- **AWS Bedrock** for providing Claude Haiku 4.5 API access
 - **LangChain** for the excellent RAG framework and LLM orchestration
 - **Pulumi** for infrastructure-as-code and secrets management (ESC)
 - **Amazon OpenSearch** for vector database with k-NN search capabilities

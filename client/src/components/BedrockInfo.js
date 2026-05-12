@@ -56,7 +56,7 @@ const BedrockInfo = () => {
         <FiCpu size={20} className="icon" />
         <div className="details">
           <div className="label">LLM Model</div>
-          <div className="model-name">Claude 3.5 Sonnet</div>
+          <div className="model-name">Claude Haiku 4.5</div>
         </div>
       </ModelInfo>
 

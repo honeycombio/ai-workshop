@@ -436,7 +436,7 @@ const taskDefinition = new aws.ecs.TaskDefinition(`${appName}-task`, {
             {name: "NODE_ENV", value: nodeEnv},
             {name: "LOG_LEVEL", value: "debug"}, // Set to "debug" for verbose logging, "info" for production
             {name: "DEFAULT_LLM_PROVIDER", value: "bedrock"},
-            {name: "BEDROCK_MODEL", value: "anthropic.claude-3-5-sonnet-20240620-v1:0"},
+            {name: "BEDROCK_MODEL", value: "us.anthropic.claude-haiku-4-5-20251001-v1:0"},
             // OpenSearch Serverless: SigV4-only, no username/password.
             {name: "OPENSEARCH_ENDPOINT", value: opensearchEndpoint},
             {name: "OPENSEARCH_INDEX", value: "otel_knowledge"},
