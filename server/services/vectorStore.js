@@ -89,10 +89,20 @@ class OpenSearchVectorStore {
       const indexExists = await this.client.indices.exists({ index: this.indexName });
 
       if (!indexExists.body) {
-        // Build settings/mappings. Serverless vector collections reject the
-        // `knn` index setting and `ef_search` param — the engine handles those
-        // implicitly. Managed domains still need them.
+        // Build settings/mappings. Both managed OpenSearch and Serverless
+        // VECTORSEARCH require `index.knn: true` — without it, the engine
+        // rejects the knn_vector field with:
+        //   "Cannot set modelId or method parameters when index.knn setting
+        //   is false"
+        // Only `knn.algo_param.ef_search` differs: managed accepts it as an
+        // index-level setting; Serverless rejects it (the engine handles
+        // ef_search implicitly per request).
         const indexBody = {
+          settings: {
+            index: {
+              knn: true,
+            },
+          },
           mappings: {
             properties: {
               content: { type: 'text' },
@@ -115,12 +125,7 @@ class OpenSearchVectorStore {
           },
         };
         if (!this.serverless) {
-          indexBody.settings = {
-            index: {
-              knn: true,
-              'knn.algo_param.ef_search': 100,
-            },
-          };
+          indexBody.settings.index['knn.algo_param.ef_search'] = 100;
         }
         await this.client.indices.create({
           index: this.indexName,
