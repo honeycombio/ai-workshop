@@ -20,22 +20,25 @@ class OpenSearchVectorStore {
     try {
       // Get OpenSearch configuration from environment
       const opensearchEndpoint = process.env.OPENSEARCH_ENDPOINT || 'https://localhost:9200';
-      const opensearchUsername = process.env.OPENSEARCH_USERNAME || 'admin';
-      const opensearchPassword = process.env.OPENSEARCH_PASSWORD;
+      // Service is 'aoss' for OpenSearch Serverless, 'es' for managed domains.
+      // Pulumi sets OPENSEARCH_SERVICE=aoss in production.
+      const opensearchService = process.env.OPENSEARCH_SERVICE || 'aoss';
+      this.serverless = opensearchService === 'aoss';
       this.indexName = process.env.OPENSEARCH_INDEX || config.vectorDb.collectionName || 'otel_knowledge';
 
-      // Debug logging for credentials
       logger.debug('OpenSearch configuration:', {
         endpoint: opensearchEndpoint,
         indexName: this.indexName,
+        service: opensearchService,
         authMethod: 'AWS SigV4 (IAM)',
       });
 
-      // Initialize OpenSearch client with AWS SigV4 signing for VPC + Fine-Grained Access Control
+      // Initialize OpenSearch client with AWS SigV4 signing.
+      // Serverless requires service='aoss'; managed OpenSearch uses service='es'.
       this.client = new Client({
         ...AwsSigv4Signer({
           region: process.env.AWS_REGION || 'us-east-1',
-          service: 'es',
+          service: opensearchService,
           getCredentials: () => {
             const credentialsProvider = defaultProvider();
             return credentialsProvider();
@@ -43,13 +46,15 @@ class OpenSearchVectorStore {
         }),
         node: opensearchEndpoint,
         ssl: {
-          rejectUnauthorized: false, // Set to true in production with valid certificates
+          rejectUnauthorized: true,
         },
       });
 
-      // Test connection
-      await this.client.info();
-      logger.info('Connected to OpenSearch');
+      // Serverless rejects the `/` info endpoint — skip the warmup ping there.
+      if (!this.serverless) {
+        await this.client.info();
+      }
+      logger.info(`Connected to OpenSearch (service=${opensearchService})`);
 
       // Initialize embeddings - always use Bedrock with Amazon Titan
       this.embeddings = new BedrockEmbeddings({
@@ -84,37 +89,47 @@ class OpenSearchVectorStore {
       const indexExists = await this.client.indices.exists({ index: this.indexName });
 
       if (!indexExists.body) {
-        // Create index with k-NN settings
-        await this.client.indices.create({
-          index: this.indexName,
-          body: {
-            settings: {
-              index: {
-                knn: true, // Enable k-NN
-                "knn.algo_param.ef_search": 100, // Improves recall at the cost of latency
-              },
-            },
-            mappings: {
-              properties: {
-                content: { type: 'text' },
-                embedding: {
-                  type: 'knn_vector',
-                  dimension: 1536, // Amazon Titan Text Embeddings dimension
-                  method: {
-                    name: 'hnsw',
-                    space_type: 'l2',
-                    engine: 'faiss', // Changed from nmslib (deprecated in OpenSearch 3.x) to faiss
-                    parameters: {
-                      ef_construction: 128,
-                      m: 24,
-                    },
-                  },
-                },
-                metadata: { type: 'object', enabled: true },
-                timestamp: { type: 'date' },
-              },
+        // Build settings/mappings. Both managed OpenSearch and Serverless
+        // VECTORSEARCH require `index.knn: true` — without it, the engine
+        // rejects the knn_vector field with:
+        //   "Cannot set modelId or method parameters when index.knn setting
+        //   is false"
+        // Only `knn.algo_param.ef_search` differs: managed accepts it as an
+        // index-level setting; Serverless rejects it (the engine handles
+        // ef_search implicitly per request).
+        const indexBody = {
+          settings: {
+            index: {
+              knn: true,
             },
           },
+          mappings: {
+            properties: {
+              content: { type: 'text' },
+              embedding: {
+                type: 'knn_vector',
+                dimension: 1536, // Amazon Titan Text Embeddings dimension
+                method: {
+                  name: 'hnsw',
+                  space_type: 'l2',
+                  engine: 'faiss',
+                  parameters: {
+                    ef_construction: 128,
+                    m: 24,
+                  },
+                },
+              },
+              metadata: { type: 'object', enabled: true },
+              timestamp: { type: 'date' },
+            },
+          },
+        };
+        if (!this.serverless) {
+          indexBody.settings.index['knn.algo_param.ef_search'] = 100;
+        }
+        await this.client.indices.create({
+          index: this.indexName,
+          body: indexBody,
         });
         logger.info(`Created OpenSearch index: ${this.indexName}`);
       } else {
@@ -173,12 +188,15 @@ class OpenSearchVectorStore {
         });
       }
 
-      // Bulk index
+      // Bulk index. Serverless rejects the `refresh` parameter (it's
+      // eventually consistent and refreshes automatically); managed domains
+      // honour it.
       if (bulkBody.length > 0) {
-        const response = await this.client.bulk({
-          refresh: true,
-          body: bulkBody,
-        });
+        const bulkArgs = { body: bulkBody };
+        if (!this.serverless) {
+          bulkArgs.refresh = true;
+        }
+        const response = await this.client.bulk(bulkArgs);
 
         if (response.body.errors) {
           const erroredDocuments = [];
@@ -310,6 +328,17 @@ class OpenSearchVectorStore {
     }
 
     try {
+      // Serverless doesn't expose _stats — use _count instead and report size
+      // as unknown. Managed OpenSearch returns full stats.
+      if (this.serverless) {
+        const countResp = await this.client.count({ index: this.indexName });
+        return {
+          indexName: this.indexName,
+          initialized: this.initialized,
+          documentCount: countResp.body.count,
+          sizeInBytes: null,
+        };
+      }
       const stats = await this.client.indices.stats({ index: this.indexName });
       return {
         indexName: this.indexName,

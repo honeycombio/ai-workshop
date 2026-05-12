@@ -44,12 +44,8 @@ pulumi login
 # Create a new stack (e.g., dev, staging, prod)
 pulumi stack init dev
 
-# Configure required secrets
-pulumi config set --secret opensearchMasterPassword <strong-password>
-
-# Optional: Configure API keys (or set them manually in Secrets Manager later)
-pulumi config set --secret openaiApiKey <your-openai-key>
-pulumi config set --secret anthropicApiKey <your-anthropic-key>
+# Configure required secrets (Honeycomb only — OpenSearch Serverless uses IAM/SigV4)
+pulumi config set --secret honeycombApiKey <your-honeycomb-ingest-key>
 ```
 
 ### 3. Deploy Infrastructure (Automated Build)
@@ -106,11 +102,11 @@ open $ALB_URL
 SSH into your ECS task or run the ingest script locally pointing to OpenSearch:
 
 ```bash
-# Get OpenSearch endpoint
-OPENSEARCH_ENDPOINT=$(pulumi stack output openSearchEndpoint)
+# Get OpenSearch Serverless collection endpoint
+export OPENSEARCH_ENDPOINT=$(pulumi stack output opensearchEndpoint)
+export OPENSEARCH_SERVICE=aoss
 
-# Update ingest script to use OpenSearch
-# Then run data ingestion
+# Run data ingestion with AWS creds (lizf-sandbox or your ESC environment)
 cd ..
 node scripts/ingest-data.js
 ```
@@ -120,15 +116,9 @@ node scripts/ingest-data.js
 ### Stack Configuration
 
 ```bash
-# Set OpenSearch master user (default: admin)
-pulumi config set opensearchMasterUser admin
-
-# Set OpenSearch master password (required)
-pulumi config set --secret opensearchMasterPassword <password>
-
-# Set API keys (optional - can be set in Secrets Manager later)
-pulumi config set --secret openaiApiKey <key>
-pulumi config set --secret anthropicApiKey <key>
+# Honeycomb ingest API key (the only required secret — OpenSearch Serverless
+# auth is via IAM, no master user/password to manage).
+pulumi config set --secret honeycombApiKey <key>
 ```
 
 **Note**: The `backendImage` config is no longer needed - Pulumi builds and pushes automatically!
@@ -195,11 +185,8 @@ pulumi stack export > stack-backup.json
 ## Accessing OpenSearch Dashboard
 
 ```bash
-# Get dashboard URL
-pulumi stack output openSearchDashboard
-
-# Create SSH tunnel through ECS task (OpenSearch is in private subnet)
-# Or configure VPN/bastion host access
+# Get the Serverless dashboard URL — public, but IAM-gated via the data access policy
+pulumi stack output opensearchDashboard
 ```
 
 ## Troubleshooting
