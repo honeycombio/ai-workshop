@@ -590,21 +590,30 @@ const metricStreamPolicy = new aws.iam.RolePolicy(`${appName}-metric-stream-poli
     })),
 });
 
-// Create CloudWatch Metric Stream to send ECS metrics to Honeycomb
+// Create CloudWatch Metric Stream to send infrastructure metrics to Honeycomb.
+// Namespaces chosen to give Module 3 of the workshop enough surface for the
+// "find the bottleneck" queries: ECS for the app side, ALB for traffic + tail
+// latency, AOSS for vector-store throughput/OCU, Bedrock for LLM cost/latency,
+// NAT for egress (relevant to the no-VPC-endpoint-for-Bedrock breakage story).
 const metricStream = new aws.cloudwatch.MetricStream(`${appName}-metric-stream`, {
-    name: `${appName}-ecs-metrics`,
+    name: `${appName}-infra-metrics`,
     roleArn: metricStreamRole.arn,
     firehoseArn: firehoseDeliveryStream.arn,
     outputFormat: "opentelemetry1.0", // Use OpenTelemetry format for Honeycomb compatibility
     includeFilters: [
-        {
-            namespace: "AWS/ECS",
-            metricNames: [],  // Empty array means include all metrics from this namespace
-        },
-        {
-            namespace: "ECS/ContainerInsights",
-            metricNames: [],
-        },
+        // ECS task + container metrics
+        {namespace: "AWS/ECS", metricNames: []},
+        {namespace: "ECS/ContainerInsights", metricNames: []},
+        // ALB: RequestCount, TargetResponseTime, HTTPCode_Target_*, HealthyHostCount
+        {namespace: "AWS/ApplicationELB", metricNames: []},
+        // OpenSearch Serverless: OCU usage, search/index counts, latency
+        {namespace: "AWS/AOSS", metricNames: []},
+        // Bedrock: InvocationLatency, Invocations, InputTokenCount, OutputTokenCount
+        // (the headline GenAI-observability namespace)
+        {namespace: "AWS/Bedrock", metricNames: []},
+        // NAT Gateway: BytesOut/In — relevant to the "no VPC endpoint for Bedrock"
+        // cost-story breakage; egress to Bedrock will pile up here.
+        {namespace: "AWS/NATGateway", metricNames: []},
     ],
     tags: tags,
 }, {dependsOn: [metricStreamPolicy]});
