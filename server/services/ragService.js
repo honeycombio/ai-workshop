@@ -6,6 +6,8 @@ import llmProvider from './llmProvider.js';
 import vectorStore from './vectorStore.js';
 import logger from '../config/logger.js';
 import { traceLLMCall, addGenAIContent } from '../utils/llmTracing.js';
+import { tokenizePrompt } from '../utils/tokenization.js';
+import { config } from '../config/index.js';
 
 const tracer = trace.getTracer('rag-service', '1.0.0');
 
@@ -190,13 +192,32 @@ Provide a helpful, accurate response based on the context above. think deeply an
               'rag.llm.context_length': formattedContext.length
             });
 
-            const response = await this.promptTemplate
-              .pipe(llm)
-              .pipe(new StringOutputParser())
-              .invoke({
-                context: formattedContext,
-                question: question
-              });
+            // Render the prompt to a string up front so we can tokenize it
+            // locally before paying for the LLM call.
+            const formattedPrompt = await this.promptTemplate.format({
+              context: formattedContext,
+              question: question,
+            });
+
+            // CPU-bound BPE tokenization + input-budget enforcement.
+            // Throws `InputTokenBudgetExceeded` if the prompt is too big.
+            const estimatedInputTokens = tokenizePrompt(formattedPrompt, {
+              modelName: config.llm.bedrock.model,
+              maxInputTokens: config.llm.maxInputTokens,
+            });
+
+            // Wrap the LLM call in `traceLLMCall` so a `chat <model>` span
+            // exists with GenAI semconv attributes. We attach the estimate as
+            // initial metadata on that span so it lives alongside the model's
+            // actual `gen_ai.usage.input_tokens` (set on the same span when
+            // the response returns) — making estimated-vs-actual comparable
+            // within a single row in Honeycomb.
+            const response = await traceLLMCall(
+              actualProvider,
+              config.llm.bedrock.model,
+              () => llm.pipe(new StringOutputParser()).invoke(formattedPrompt),
+              { 'gen_ai.usage.input_tokens.estimated': estimatedInputTokens },
+            );
 
             const duration = Date.now() - llmStartTime;
 
