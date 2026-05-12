@@ -14,6 +14,11 @@ export const config = {
     maxContextLength: parseInt(process.env.MAX_CONTEXT_LENGTH) || 4000,
     temperature: parseFloat(process.env.TEMPERATURE) || 0.7,
     maxTokens: parseInt(process.env.MAX_TOKENS) || 1000,
+    // Max input tokens allowed per /api/chat request. Tokenized client-side
+    // (see server/utils/tokenization.js) before the LLM call so oversized
+    // prompts are rejected pre-flight. Haiku 4.5 supports up to 200k input
+    // tokens; defaulting to 100k leaves headroom for output + safety margin.
+    maxInputTokens: parseInt(process.env.MAX_INPUT_TOKENS) || 100000,
 
     bedrock: {
       accessKeyId: process.env.AWS_ACCESS_KEY_ID, // Optional - only for local dev
