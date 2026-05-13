@@ -1,17 +1,30 @@
 # syntax=docker/dockerfile:1
+
+# Pin base image by digest for hermetic builds. Same context → same layer hashes
+# across machines, so `pulumi up` doesn't see a fake "image changed" diff each run.
+# Refresh periodically when accepting upstream Alpine/Node patches.
+ARG NODE_BASE=node:18-alpine@sha256:8d6421d663b4c28fd3ebc498332f249011d118945588d0a35cb9bc4b8ca09d9e
+
 # Build stage
-FROM node:18-alpine AS builder
+FROM ${NODE_BASE} AS builder
+
+# SOURCE_DATE_EPOCH is honored by reproducible tooling. Combined with buildkit's
+# rewrite-timestamp output, this gives bit-identical image layers across rebuilds.
+ARG SOURCE_DATE_EPOCH=1700000000
+ENV SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
 
 WORKDIR /app
 
-# Copy package files for root and client
-COPY package*.json ./
-COPY client/package*.json ./client/
+# Copy lockfiles + manifests first so dependency installs can layer-cache.
+COPY package.json package-lock.json ./
+COPY client/package.json client/package-lock.json ./client/
 
-# Install ALL dependencies (including dev deps for build) with cache mount
+# `npm ci` enforces lockfile (no implicit version resolution), making installs
+# deterministic. We still need the client devDependencies for `npm run build`,
+# so client install does not pass --omit=dev.
 RUN --mount=type=cache,target=/root/.npm \
-    npm install --production && \
-    cd client && npm install --production
+    npm ci --omit=dev && \
+    cd client && npm ci
 
 # Copy only backend, frontend, and scripts (avoid copying entire directory)
 COPY server ./server
@@ -22,16 +35,19 @@ COPY scripts ./scripts
 RUN cd client && npm run build
 
 # Production stage
-FROM node:18-alpine
+FROM ${NODE_BASE}
+
+ARG SOURCE_DATE_EPOCH=1700000000
+ENV SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy lockfile + manifest
+COPY package.json package-lock.json ./
 
-# Install ONLY production dependencies with cache mount
+# `npm ci --omit=dev` for deterministic production-only installs.
 RUN --mount=type=cache,target=/root/.npm \
-    npm install --production
+    npm ci --omit=dev
 
 # Copy built application from builder
 COPY --from=builder /app/server ./server

@@ -3,6 +3,8 @@ node_modules/
 */node_modules/
 package-lock.json
 */package-lock.json
+# Hermetic builds need the client lockfile committed so `npm ci` can use it.
+!client/package-lock.json
 
 # Production builds
 build/

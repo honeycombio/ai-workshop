@@ -32,3 +32,6 @@ pulumi/bin
 docs/
 pulumi/**
 .memory
+
+# Loadgen has its own Dockerfile + context — keep it out of the main image's contextHash.
+loadgen/
