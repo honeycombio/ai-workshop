@@ -2,6 +2,7 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import * as awsx from "@pulumi/awsx";
 import * as dockerBuild from "@pulumi/docker-build";
+import * as command from "@pulumi/command";
 import * as fs from "fs";
 
 // ADOT collector config — kept as a separate YAML file to avoid escaping pain
@@ -60,12 +61,23 @@ const lifecyclePolicy = new aws.ecr.LifecyclePolicy(`${appName}-lifecycle`, {
     }),
 });
 
-// Get ECR authorization token
-const authToken = aws.ecr.getAuthorizationTokenOutput({
-    registryId: ecrRepository.registryId,
-});
+// Refresh ECR credentials in ~/.docker/config.json before each build.
+// We don't put credentials in the Image resource's `registries:` field because that
+// would either (a) trigger a rebuild every `pulumi up` as the 12h ECR token rotates,
+// or (b) freeze a stale token in state if we suppress the diff with ignoreChanges.
+// Instead, buildkit picks up creds from the local Docker config, which this Command
+// keeps fresh.
+//
+// The `triggers` array re-runs the login when the value changes. Bucketing on the
+// current hour gives us a re-login every hour — well under ECR's 12h token TTL but
+// stable within a single `pulumi up` session.
+const ecrLogin = new command.local.Command(`${appName}-ecr-login`, {
+    create: pulumi.interpolate`aws ecr get-login-password --region ${aws.getRegionOutput().name} | docker login --username AWS --password-stdin ${ecrRepository.repositoryUrl}`,
+    triggers: [Math.floor(Date.now() / 3_600_000).toString()],
+}, {dependsOn: [ecrRepository]});
 
-// Build and push Docker image
+// Build and push Docker image. No `registries:` here — buildkit reads auth from
+// ~/.docker/config.json, kept fresh by the ecrLogin Command above.
 const image = new dockerBuild.Image(`${appName}-image`, {
     tags: [pulumi.interpolate`${ecrRepository.repositoryUrl}:${environment}`],
     push: true,
@@ -79,12 +91,7 @@ const image = new dockerBuild.Image(`${appName}-image`, {
     buildArgs: {
         NODE_ENV: "production",
     },
-    registries: [{
-        address: ecrRepository.repositoryUrl,
-        username: authToken.userName,
-        password: authToken.password,
-    }],
-}, {dependsOn: [ecrRepository]});
+}, {dependsOn: [ecrRepository, ecrLogin]});
 
 // =============================================================================
 // VPC and Networking
@@ -703,18 +710,15 @@ new aws.ecr.LifecyclePolicy(`${appName}-loadgen-lifecycle`, {
     }),
 });
 
+// Reuse the same ecrLogin Command — both repos live in the same registry, so a single
+// `docker login` against the registry host covers both image pushes.
 const loadgenImage = new dockerBuild.Image(`${appName}-loadgen-image`, {
     tags: [pulumi.interpolate`${loadgenEcr.repositoryUrl}:${environment}`],
     push: true,
     context: {location: "../loadgen"},
     dockerfile: {location: "../loadgen/Dockerfile"},
     platforms: ["linux/arm64"],
-    registries: [{
-        address: loadgenEcr.repositoryUrl,
-        username: authToken.userName,
-        password: authToken.password,
-    }],
-}, {dependsOn: [loadgenEcr]});
+}, {dependsOn: [loadgenEcr, ecrLogin]});
 
 // Loadgen task role — no AWS perms needed beyond the standard execution role.
 const loadgenTaskRole = new aws.iam.Role(`${appName}-loadgen-task-role`, {
