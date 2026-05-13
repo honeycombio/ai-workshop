@@ -490,11 +490,9 @@ const taskDefinition = new aws.ecs.TaskDefinition(`${appName}-task`, {
                 {name: "OTEL_SEMCONV_STABILITY_OPT_IN", value: "gen_ai"},
                 // Build identity — surfaces on every span via `service.version` and
                 // `container.image.*` so we can correlate observed behaviour with the
-                // artifact actually running. See server/config/tracing.js.
-                {name: "SERVICE_VERSION", value: gitSha},
-                {name: "CONTAINER_IMAGE_NAME", value: imageName},
-                {name: "CONTAINER_IMAGE_TAG", value: environment},
-                {name: "CONTAINER_IMAGE_ID", value: imageSha},
+                // artifact actually running. Picked up by the OTel SDK's env-based
+                // resource detector; tracing.js does not need to read these.
+                {name: "OTEL_RESOURCE_ATTRIBUTES", value: `service.version=${gitSha},container.image.name=${imageName},container.image.tags=${environment},container.image.id=${imageSha}`},
             ],
             // App container holds no Honeycomb secret — the ADOT collector owns the egress auth.
             secrets: [],
