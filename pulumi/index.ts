@@ -84,14 +84,7 @@ const image = new dockerBuild.Image(`${appName}-image`, {
         username: authToken.userName,
         password: authToken.password,
     }],
-}, {
-    dependsOn: [ecrRepository],
-    // ECR auth tokens rotate every 12h. Without ignoreChanges, every `pulumi up`
-    // sees a "changed" registries.password and rebuilds the image — even when no
-    // source files changed. The token is only used to push at create/update time;
-    // a rotated value is not a meaningful diff for the built artifact.
-    ignoreChanges: ["registries"],
-});
+}, {dependsOn: [ecrRepository]});
 
 // =============================================================================
 // VPC and Networking
