@@ -1,0 +1,49 @@
+# ADOT Collector configuration for dual-send: Honeycomb + AWS X-Ray
+# Deployed as an ECS sidecar container. The app sends OTLP to localhost:4318,
+# and this collector fans out to both backends with appropriate auth on each.
+#
+# Honeycomb path: OTLP/HTTP with the team-key header.
+# X-Ray path: the `awsxray` exporter translates OTel spans into X-Ray segments
+#   and calls PutTraceSegments using the ECS task role's IAM credentials.
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    # Small batches keep dual-send latency tight; X-Ray needs segments within a few seconds.
+    timeout: 1s
+    send_batch_size: 50
+
+exporters:
+  otlphttp/honeycomb:
+    endpoint: https://api.honeycomb.io
+    headers:
+      x-honeycomb-team: ${env:HONEYCOMB_API_KEY}
+
+  awsxray:
+    region: us-east-1
+    # Indexes the OTel `service.name` resource attribute as an X-Ray annotation so
+    # the console's service filter populates correctly.
+    indexed_attributes: [service.name]
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/honeycomb, awsxray]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/honeycomb]
