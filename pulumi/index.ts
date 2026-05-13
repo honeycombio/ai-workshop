@@ -3,9 +3,21 @@ import * as aws from "@pulumi/aws";
 import * as awsx from "@pulumi/awsx";
 import * as dockerBuild from "@pulumi/docker-build";
 import * as fs from "fs";
+import {execSync} from "child_process";
 
 // ADOT collector config — kept as a separate YAML file to avoid escaping pain
 const collectorConfigYaml = fs.readFileSync("collector-config.yaml", "utf-8");
+
+// Capture the short git SHA at deploy time so the running container can advertise
+// its source revision on every span via `service.version`. Falls back to "unknown"
+// outside a git checkout (e.g. zipped workshop materials).
+const gitSha = (() => {
+    try {
+        return execSync("git rev-parse --short HEAD", {encoding: "utf-8"}).trim();
+    } catch {
+        return "unknown";
+    }
+})();
 
 // Configuration
 const config = new pulumi.Config();
@@ -444,8 +456,10 @@ const taskDefinition = new aws.ecs.TaskDefinition(`${appName}-task`, {
         openSearchCollection.collectionEndpoint,
         secretsManagerSecret.arn,
         image.ref,
+        image.digest,
+        ecrRepository.repositoryUrl,
         aws.getRegionOutput().name,
-    ]).apply(([logGroupName, opensearchEndpoint, secretArn, imageDigest, awsRegion]) => JSON.stringify([
+    ]).apply(([logGroupName, opensearchEndpoint, secretArn, imageDigest, imageSha, imageName, awsRegion]) => JSON.stringify([
         // Application container — sends OTLP to the ADOT collector sidecar at localhost:4318
         {
             name: "app",
@@ -474,6 +488,13 @@ const taskDefinition = new aws.ecs.TaskDefinition(`${appName}-task`, {
                 {name: "OTEL_EXPORTER_OTLP_PROTOCOL", value: "http/protobuf"},
                 // Enable OpenTelemetry GenAI Semantic Conventions v1.0 (stable)
                 {name: "OTEL_SEMCONV_STABILITY_OPT_IN", value: "gen_ai"},
+                // Build identity — surfaces on every span via `service.version` and
+                // `container.image.*` so we can correlate observed behaviour with the
+                // artifact actually running. See server/config/tracing.js.
+                {name: "SERVICE_VERSION", value: gitSha},
+                {name: "CONTAINER_IMAGE_NAME", value: imageName},
+                {name: "CONTAINER_IMAGE_TAG", value: environment},
+                {name: "CONTAINER_IMAGE_ID", value: imageSha},
             ],
             // App container holds no Honeycomb secret — the ADOT collector owns the egress auth.
             secrets: [],

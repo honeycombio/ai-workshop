@@ -29,6 +29,9 @@ import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
  * - OTEL_SERVICE_NAME: Service name for traces and logs
  * - OTEL_EXPORTER_OTLP_ENDPOINT: OTLP endpoint (http://localhost:4318 in ECS)
  * - OTEL_EXPORTER_OTLP_PROTOCOL: Protocol to use (http/protobuf)
+ * - SERVICE_VERSION: Git short SHA — surfaces as service.version on every span.
+ * - CONTAINER_IMAGE_NAME / _TAG / _ID: OTel container.image.* resource attributes.
+ *   Set by Pulumi at deploy time from the built dockerBuild.Image resource.
  */
 export function initializeTracing() {
   try {
@@ -37,8 +40,18 @@ export function initializeTracing() {
     diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.DEBUG);
 
     const serviceName = process.env.OTEL_SERVICE_NAME || 'otel-ai-chatbot';
-    const serviceVersion = process.env.npm_package_version || '1.0.0';
+    // SERVICE_VERSION is the git short SHA, injected by Pulumi at deploy time
+    // (see pulumi/index.ts). Falls back to package.json for local dev.
+    const serviceVersion = process.env.SERVICE_VERSION || process.env.npm_package_version || '1.0.0';
     const environment = process.env.NODE_ENV || 'development';
+
+    // Build identity from the container image — also injected by Pulumi. Surfaces
+    // on every span as OTel container.image.* resource attributes so observed
+    // behaviour is correlatable with the exact artifact running. Each is optional
+    // so local `npm start` outside ECS still works.
+    const containerImageName = process.env.CONTAINER_IMAGE_NAME;
+    const containerImageTag = process.env.CONTAINER_IMAGE_TAG;
+    const containerImageId = process.env.CONTAINER_IMAGE_ID;
 
     // Check if OTLP endpoint is configured
     const otlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
@@ -69,7 +82,11 @@ export function initializeTracing() {
         [ATTR_SERVICE_VERSION]: serviceVersion,
         [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: environment,
         'service.type': 'backend',
-        'service.component': 'ai-chatbot'
+        'service.component': 'ai-chatbot',
+        // OTel semconv container.image.* — only emitted when Pulumi-injected.
+        ...(containerImageName && { 'container.image.name': containerImageName }),
+        ...(containerImageTag && { 'container.image.tags': [containerImageTag] }),
+        ...(containerImageId && { 'container.image.id': containerImageId }),
       }),
       traceExporter: traceExporter,
       // Wrap log exporter in BatchLogRecordProcessor for proper export
