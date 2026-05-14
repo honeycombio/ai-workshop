@@ -4,7 +4,7 @@ import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { WinstonInstrumentation } from '@opentelemetry/instrumentation-winston';
 import { resourceFromAttributes } from '@opentelemetry/resources';
-import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
+import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
 import { ATTR_DEPLOYMENT_ENVIRONMENT_NAME } from '@opentelemetry/semantic-conventions/incubating';
 import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
 // Note: DO NOT import logger here - Winston must be imported AFTER instrumentation is set up
@@ -29,6 +29,11 @@ import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
  * - OTEL_SERVICE_NAME: Service name for traces and logs
  * - OTEL_EXPORTER_OTLP_ENDPOINT: OTLP endpoint (http://localhost:4318 in ECS)
  * - OTEL_EXPORTER_OTLP_PROTOCOL: Protocol to use (http/protobuf)
+ * - OTEL_RESOURCE_ATTRIBUTES: comma-separated key=value pairs. Pulumi populates
+ *   this at deploy time with service.version (git short SHA) and the
+ *   container.image.* attributes from the built dockerBuild.Image resource.
+ *   The OTel SDK's env-based resource detector picks them up automatically —
+ *   no per-attribute env-var reading needed here.
  */
 export function initializeTracing() {
   try {
@@ -37,7 +42,6 @@ export function initializeTracing() {
     diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.DEBUG);
 
     const serviceName = process.env.OTEL_SERVICE_NAME || 'otel-ai-chatbot';
-    const serviceVersion = process.env.npm_package_version || '1.0.0';
     const environment = process.env.NODE_ENV || 'development';
 
     // Check if OTLP endpoint is configured
@@ -64,12 +68,13 @@ export function initializeTracing() {
 
     // Initialize OpenTelemetry SDK with auto-instrumentations
     const sdk = new NodeSDK({
+      // service.version + container.image.* are merged in from the env-based
+      // resource detector via OTEL_RESOURCE_ATTRIBUTES (set by Pulumi).
       resource: resourceFromAttributes({
         [ATTR_SERVICE_NAME]: serviceName,
-        [ATTR_SERVICE_VERSION]: serviceVersion,
         [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: environment,
         'service.type': 'backend',
-        'service.component': 'ai-chatbot'
+        'service.component': 'ai-chatbot',
       }),
       traceExporter: traceExporter,
       // Wrap log exporter in BatchLogRecordProcessor for proper export
